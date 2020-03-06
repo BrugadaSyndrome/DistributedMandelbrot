@@ -1,23 +1,49 @@
 package main
 
-import "flag"
+import (
+	"log"
+)
 
-/*
- * TODO: Mandelbrot.GenerateMandelbrotZoom(startMag, endMag, magStep)
- * TODO: need to make a folder to store images (especially for zoom generation)
- * TODO: smooth coloring, aa
- */
+var (
+	Error   *log.Logger // logLevel = 1
+	Warning *log.Logger // logLevel = 2
+	Info    *log.Logger // logLevel = 3
+	Debug   *log.Logger // Loglevel = 4
+
+	boundary, centerX, centerY, magnificationEnd, magnificationStart, magnificationStep float64
+	height, maxIterations, width, workerCount                                           int
+	ipAddress, port                                                                     string
+	isWorker, isCoordinator                                                             bool
+)
 
 func main() {
-	boundary := flag.Float64("boundary", 4.0, "Boundary escape value")
-	centerX := flag.Float64("centerX", 0.0, "Center x value of mandelbrot set")
-	centerY := flag.Float64("centerY", 0.0, "Center y value of mandelbrot set")
-	height := flag.Int("height", 1080, "Height of resulting image")
-	magnification := flag.Float64("magnification", 1.0, "Zoom level")
-	maxIterations := flag.Int("maxIterations", 1000, "Iterations to run to verify each point")
-	width := flag.Int("width", 1920, "Width of resulting image")
-	flag.Parse()
+	InitLogger(4)
+	parseArguemnts()
 
-	mandelbrot := newMandelbrot(*boundary, *centerX, *centerY, *height, *magnification, *maxIterations, *width)
-	mandelbrot.GenerateMandelbrot()
+	if isCoordinator {
+		Info.Printf("Starting coordinator")
+		// todo: check if there is already a coordinator
+		// coordinator := newCoordinator(ipAddress, port)
+		/*
+			go coordinator.GenerateTasks()
+
+			workers := make([]Worker, workerCount)
+			for i := 0; i < workerCount; i++  {
+				workers[i] = newWorker()
+				// workers[i].Work()
+			}
+
+			for task := range coordinator.Tasks {
+				fmt.Printf("%+v\n", task)
+			}
+		*/
+	}
+
+	if isWorker {
+		Info.Printf("Starting worker")
+		// todo: make sure the coordinator is set up to accept another worker
+
+		// worker := newWorker(ipAddress, port)
+	}
+
 }
