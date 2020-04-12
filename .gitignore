@@ -1,3 +1,5 @@
 *.png
 *.exe
 /.idea
+/.vagrant
+/images

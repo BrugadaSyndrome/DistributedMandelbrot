@@ -11,6 +11,8 @@ import (
 	"os"
 )
 
+type Nothing struct{}
+
 func InitLogger(logLevel int) {
 	if logLevel <= 0 {
 		logLevel = 0
@@ -45,18 +47,17 @@ func parseArguemnts() {
 	// Mandelbrot values
 	flag.Float64Var(&boundary, "boundary", 4.0, "Boundary escape value")
 	flag.IntVar(&maxIterations, "maxIterations", 1000, "Iterations to run to verify each point")
-	flag.Float64Var(&centerX, "centerX", 0.0, "Center x value of mandelbrot set")
-	flag.Float64Var(&centerY, "centerY", 0.0, "Center y value of mandelbrot set")
-	flag.Float64Var(&magnificationEnd, "magnificationEnd", 1.0, "End zoom level")
-	flag.Float64Var(&magnificationStart, "magnificationStart", 1.0, "Start zoom level")
-	flag.Float64Var(&magnificationStep, "magnificationStep", 0, "Number of frames")
+	flag.Float64Var(&centerX, "centerX", -0.2, "Center x value of mandelbrot set")
+	flag.Float64Var(&centerY, "centerY", 0.75, "Center y value of mandelbrot set")
+	flag.Float64Var(&magnificationEnd, "magnificationEnd", 0.75, "End zoom level")
+	flag.Float64Var(&magnificationStart, "magnificationStart", 1.75, "Start zoom level")
+	flag.Float64Var(&magnificationStep, "magnificationStep", 1.0, "Number of frames")
 	flag.IntVar(&height, "height", 1920, "Height of resulting image")
 	flag.IntVar(&width, "width", 1080, "Width of resulting image")
 
-	// Worker setup values
-	flag.IntVar(&workerCount, "workerCount", 1, "Number of workers that will be expected to be present")
-	flag.StringVar(&ipAddress, "ipAddress", getLocalAddress(), "ip address this server will use")
-	flag.StringVar(&port, "port", "8080", "port this server will use")
+	// Config values
+	flag.IntVar(&workerCount, "workerCount", 2, "number of workers to create")
+	flag.StringVar(&coordinatorAddress, "coordinatorAddress", fmt.Sprintf("%s:%s", getLocalAddress(), "10000"), "address of coordinator")
 	flag.BoolVar(&isWorker, "isWorker", false, "Is this instance a worker")
 	flag.BoolVar(&isCoordinator, "isCoordinator", false, "Is this instance the coordinator")
 
@@ -81,20 +82,28 @@ func parseArguemnts() {
 	Debug.Printf("Magnification Step: %f\n", magnificationStep)
 	Debug.Printf("Max Iterations: %d\n", maxIterations)
 	Debug.Printf("Width: %d\n", width)
-	Debug.Printf("WorkerCount: %d\n", workerCount)
-	Debug.Printf("IpAddress: %s\n", ipAddress)
-	Debug.Printf("Port: %s\n", port)
+	Debug.Printf("Coordniator Address: %s\n", coordinatorAddress)
+	Debug.Printf("Port: %d\n", workerCount)
 }
 
-func newRPCServer(object interface{}, ipAddress string, port string) {
+// https://github.com/golang/go/issues/13395
+func newRPCServer(object interface{}, ipAddress string, port int) {
 	rpc.Register(object)
+
+	oldMux := http.DefaultServeMux
+	mux := http.NewServeMux()
+	http.DefaultServeMux = mux
+
 	rpc.HandleHTTP()
 
-	l, e := net.Listen("tcp", fmt.Sprintf("%s:%s", ipAddress, port))
-	if e != nil {
-		Error.Fatalf("Error creating RPC Server at address %s:%s with error: %v", ipAddress, port, e)
+	http.DefaultServeMux = oldMux
+
+	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", ipAddress, port))
+	if err != nil {
+		Error.Fatalf("Error creating RPC Server at address %s:%s with error: %v", ipAddress, port, err)
 	}
-	go http.Serve(l, nil)
+
+	go http.Serve(l, mux)
 }
 
 func getLocalAddress() string {
@@ -134,18 +143,15 @@ func getLocalAddress() string {
 func callRPC(address string, method string, request interface{}, reply interface{}) error {
 	node, err := rpc.DialHTTP("tcp", address)
 	if err != nil {
-		Error.Fatalf("Failed dailing address: %s", address)
+		Error.Printf("Failed dailing address: %s - %s", address, err)
+		return err
+	}
+	defer node.Close()
+
+	err = node.Call(method, request, reply)
+	if err != nil {
+		Error.Printf("Failed call to address: %s, method: %s, request: %v, reply: %v, error: %v", address, method, request, reply, err)
 	}
 
-	callErr := node.Call(method, request, reply)
-	if callErr != nil {
-		Error.Printf("Failed call to address: %s, method: %s, reqeust: %v, reply: %v, error: %v", address, method, request, reply, callErr)
-	}
-
-	closeErr := node.Close()
-	if closeErr != nil {
-		Warning.Printf("Failed to close connection")
-	}
-
-	return callErr
+	return err
 }

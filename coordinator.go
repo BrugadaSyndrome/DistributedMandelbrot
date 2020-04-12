@@ -1,7 +1,10 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"image"
+	"sync"
 )
 
 type Coordinator struct {
@@ -9,7 +12,6 @@ type Coordinator struct {
 	centerX            float64
 	centerY            float64
 	height             int
-	image              *image.RGBA
 	magnificationEnd   float64
 	magnificationStart float64
 	magnificationStep  float64
@@ -17,10 +19,17 @@ type Coordinator struct {
 	shorterSide        int
 	width              int
 
-	Tasks chan pixelTask
+	ImageCount int
+	Images     []*image.RGBA
+	Name       string
+	TaskCount  int
+	TasksDone  chan LineTask
+	TasksTodo  chan LineTask
+
+	Mutex sync.Mutex
 }
 
-func newCoordinator(ipAddress string, port string) Coordinator {
+func newCoordinator(ipAddress string, port int) Coordinator {
 	if width <= 0 {
 		Error.Fatal("Width must be greater than 0")
 	}
@@ -42,7 +51,6 @@ func newCoordinator(ipAddress string, port string) Coordinator {
 		centerX:            centerX,
 		centerY:            centerY,
 		height:             height,
-		image:              image.NewRGBA(rect),
 		magnificationEnd:   magnificationEnd,
 		magnificationStart: magnificationStart,
 		magnificationStep:  magnificationStep,
@@ -50,55 +58,71 @@ func newCoordinator(ipAddress string, port string) Coordinator {
 		shorterSide:        shorterSide,
 		width:              width,
 
-		Tasks: make(chan pixelTask, 100),
+		Name:      fmt.Sprintf("Coordinator[%s:%d]", ipAddress, port),
+		TasksDone: make(chan LineTask, 100),
+		TasksTodo: make(chan LineTask, 100),
 	}
 
-	newRPCServer(coordinator, ipAddress, port)
+	coordinator.ImageCount = int(((magnificationEnd - magnificationStart) + 1) / magnificationStep)
+	coordinator.Images = make([]*image.RGBA, 0)
+	coordinator.TaskCount = height * coordinator.ImageCount
+	for c := 0; c < coordinator.ImageCount; c++ {
+		coordinator.Images = append(coordinator.Images, image.NewRGBA(rect))
+	}
+
+	newRPCServer(&coordinator, ipAddress, port)
 
 	return coordinator
 }
 
 func (c *Coordinator) GenerateTasks() {
+	Info.Printf("%s - is generating tasks", c.Name)
+
 	// for each picture to be generated
+	number := 0
 	for magnification := c.magnificationStart; magnification <= c.magnificationEnd; magnification += c.magnificationStep {
 
 		// for each pixel in this particular image
 		for row := 0; row < c.height; row++ {
-			for column := 0; column < c.width; column++ {
-				c.Tasks <- pixelTask{
-					Row:           row,
-					Column:        column,
-					Magnification: magnification,
-				}
-
-				// PROBABLY BEST DONE BY THE WORKER
-				// Since each pixel is from [0, c.height] and [0, c.width] and not on the real axis we need to convert
-				// the (column, row) point on the image to the (x, y) point in the real axis
-				// x := c.centerX + (float64(column)-float64(c.width)/2)/(magnification*(float64(c.shorterSide)-1))
-				// y := c.centerY + (float64(row)-float64(c.height)/2)/(magnification*(float64(c.shorterSide)-1))
+			// for column := 0; column < c.width; column++ {
+			task := LineTask{
+				currentWidth:  0,
+				ImageNumber:   number,
+				Iterations:    make([]int, 0),
+				Magnification: magnification,
+				Row:           row,
+				Width:         c.width,
 			}
+
+			c.Mutex.Lock()
+			c.TasksTodo <- task
+			c.Mutex.Unlock()
+			// }
 		}
+
+		number++
 	}
+	close(c.TasksTodo)
+
+	Info.Printf("%s - is done generating %d tasks", c.Name, c.TaskCount)
 }
 
-func (c *Coordinator) CollectResults() {
-
-}
-
-/*
-func (c *Coordinator) GenerateMandelbrot() error {
-	for x := 0; x < c.height; x++ {
-		for y := 0; y < c.width; y++ {
-			c.image.SetRGBA(y, x, c.calcPixelColor(y, x))
-		}
+func (c *Coordinator) RequestTask(request Nothing, reply *LineTask) error {
+	c.Mutex.Lock()
+	defer c.Mutex.Unlock()
+	task, more := <-c.TasksTodo
+	if !more {
+		reply = nil
+		Info.Print("All tasks handed out")
+		return errors.New("all tasks handed out")
 	}
-
-	name := fmt.Sprintf("X%f_Y%f_M%f_B%f_I%d_W%d_H%d.png", m.centerX, m.centerY, m.magnification, m.boundary, m.maxIterations, c.width, c.height)
-	f, _ := os.Create(name)
-	err := png.Encode(f, c.image)
-	if err != nil {
-		return err
-	}
+	*reply = task
 	return nil
 }
-*/
+
+func (c *Coordinator) TaskFinished(request LineTask, reply *Nothing) error {
+	c.Mutex.Lock()
+	defer c.Mutex.Unlock()
+	c.TasksDone <- request
+	return nil
+}

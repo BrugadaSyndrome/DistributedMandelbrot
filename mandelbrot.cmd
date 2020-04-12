@@ -1,1 +1,0 @@
-mandelbrot.exe -centerX=-0.2 -centerY=0.75 -magnificationStart=0.75 -magnificationEnd=0.75 -magnificationStep=1.0
