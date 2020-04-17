@@ -13,6 +13,16 @@ type Task interface {
 	RecordIteration(iteration int)
 }
 
+type TaskSettings struct {
+	Boundary      float64
+	CenterX       float64
+	CenterY       float64
+	Height        int
+	MaxIterations int
+	ShorterSide   int
+	Width         int
+}
+
 // best case O(R) or O(C); normal case O(R*C); worst case O(R^2) or O(C^2) tasks per image
 // Cons: will not work well when doing AA without adding another phase just for that???
 type PixelTask struct {

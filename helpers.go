@@ -44,7 +44,8 @@ func InitLogger(logLevel int) {
 }
 
 func parseArguemnts() {
-	// Mandelbrot values
+	// Coordinator values
+	flag.BoolVar(&isCoordinator, "isCoordinator", false, "Is this instance the coordinator")
 	flag.Float64Var(&boundary, "boundary", 4.0, "Boundary escape value")
 	flag.IntVar(&maxIterations, "maxIterations", 1000, "Iterations to run to verify each point")
 	flag.Float64Var(&centerX, "centerX", -0.2, "Center x value of mandelbrot set")
@@ -55,35 +56,35 @@ func parseArguemnts() {
 	flag.IntVar(&height, "height", 1920, "Height of resulting image")
 	flag.IntVar(&width, "width", 1080, "Width of resulting image")
 
-	// Config values
-	flag.IntVar(&workerCount, "workerCount", 2, "number of workers to create")
-	flag.StringVar(&coordinatorAddress, "coordinatorAddress", fmt.Sprintf("%s:%s", getLocalAddress(), "10000"), "address of coordinator")
+	// Worker values
 	flag.BoolVar(&isWorker, "isWorker", false, "Is this instance a worker")
-	flag.BoolVar(&isCoordinator, "isCoordinator", false, "Is this instance the coordinator")
+	flag.StringVar(&coordinatorAddress, "coordinatorAddress", fmt.Sprintf("%s:%s", getLocalAddress(), "10000"), "address of coordinator")
+	flag.IntVar(&workerCount, "workerCount", 2, "number of workers to create")
 
 	flag.Parse()
 
 	if !isWorker && !isCoordinator {
 		Error.Fatal("Please specify if this instance is the coordinator or a worker")
 	} else if isWorker {
+		Debug.Println()
 		Debug.Printf("Worker got arguments:")
+		Debug.Printf("isWorker: %t\n", isWorker)
+		Debug.Printf("Coordniator Address: %s\n", coordinatorAddress)
+		Debug.Printf("WorkerCount: %d\n", workerCount)
 	} else if isCoordinator {
+		Debug.Println()
 		Debug.Printf("Coordinator got arguments:")
+		Debug.Printf("isCoordinator: %t\n", isCoordinator)
+		Debug.Printf("Boundary: %f\n", boundary)
+		Debug.Printf("CenterX: %f\n", centerX)
+		Debug.Printf("CenterY: %f\n", centerY)
+		Debug.Printf("Height: %d\n", height)
+		Debug.Printf("Magnification End: %f\n", magnificationEnd)
+		Debug.Printf("Magnification Start: %f\n", magnificationStart)
+		Debug.Printf("Magnification Step: %f\n", magnificationStep)
+		Debug.Printf("Max Iterations: %d\n", maxIterations)
+		Debug.Printf("Width: %d\n", width)
 	}
-	Debug.Println()
-	Debug.Printf("isWorker: %t\n", isWorker)
-	Debug.Printf("isCoordinator: %t\n", isCoordinator)
-	Debug.Printf("Boundary: %f\n", boundary)
-	Debug.Printf("CenterX: %f\n", centerX)
-	Debug.Printf("CenterY: %f\n", centerY)
-	Debug.Printf("Height: %d\n", height)
-	Debug.Printf("Magnification End: %f\n", magnificationEnd)
-	Debug.Printf("Magnification Start: %f\n", magnificationStart)
-	Debug.Printf("Magnification Step: %f\n", magnificationStep)
-	Debug.Printf("Max Iterations: %d\n", maxIterations)
-	Debug.Printf("Width: %d\n", width)
-	Debug.Printf("Coordniator Address: %s\n", coordinatorAddress)
-	Debug.Printf("Port: %d\n", workerCount)
 }
 
 // https://github.com/golang/go/issues/13395

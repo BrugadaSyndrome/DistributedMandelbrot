@@ -1,1 +1,1 @@
-mandelbrot.exe -centerX=-0.2 -centerY=0.75 -isWorker=true -height=1080 -width=1920 -workerCount=5
+mandelbrot.exe -isWorker=true -workerCount=5

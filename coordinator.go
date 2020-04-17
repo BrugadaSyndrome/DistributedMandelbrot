@@ -4,29 +4,28 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"sync"
 )
 
 type Coordinator struct {
-	boundary           float64
-	centerX            float64
-	centerY            float64
-	height             int
-	magnificationEnd   float64
-	magnificationStart float64
-	magnificationStep  float64
-	maxIterations      int
-	shorterSide        int
-	width              int
+	ImageCount         int
+	ImageTasks         []*ImageTask
+	MagnificationEnd   float64
+	MagnificationStart float64
+	MagnificationStep  float64
+	Mutex              sync.Mutex
+	Name               string
+	Settings           TaskSettings
+	TaskCount          int
+	TasksDone          chan LineTask
+	TasksTodo          chan LineTask
+}
 
-	ImageCount int
-	Images     []*image.RGBA
-	Name       string
-	TaskCount  int
-	TasksDone  chan LineTask
-	TasksTodo  chan LineTask
-
-	Mutex sync.Mutex
+type ImageTask struct {
+	Generated  bool
+	Image      *image.RGBA
+	PixelsLeft int
 }
 
 func newCoordinator(ipAddress string, port int) Coordinator {
@@ -47,27 +46,34 @@ func newCoordinator(ipAddress string, port int) Coordinator {
 	}
 
 	coordinator := Coordinator{
-		boundary:           boundary,
-		centerX:            centerX,
-		centerY:            centerY,
-		height:             height,
-		magnificationEnd:   magnificationEnd,
-		magnificationStart: magnificationStart,
-		magnificationStep:  magnificationStep,
-		maxIterations:      maxIterations,
-		shorterSide:        shorterSide,
-		width:              width,
-
-		Name:      fmt.Sprintf("Coordinator[%s:%d]", ipAddress, port),
-		TasksDone: make(chan LineTask, 100),
-		TasksTodo: make(chan LineTask, 100),
+		ImageCount:         int(((magnificationEnd - magnificationStart) + 1) / magnificationStep),
+		ImageTasks:         make([]*ImageTask, 0),
+		MagnificationEnd:   magnificationEnd,
+		MagnificationStart: magnificationStart,
+		MagnificationStep:  magnificationStep,
+		Name:               fmt.Sprintf("Coordinator[%s:%d]", ipAddress, port),
+		TasksDone:          make(chan LineTask, 100),
+		TasksTodo:          make(chan LineTask, 100),
 	}
 
-	coordinator.ImageCount = int(((magnificationEnd - magnificationStart) + 1) / magnificationStep)
-	coordinator.Images = make([]*image.RGBA, 0)
+	coordinator.Settings = TaskSettings{
+		Boundary:      boundary,
+		CenterX:       centerX,
+		CenterY:       centerY,
+		Height:        height,
+		MaxIterations: maxIterations,
+		ShorterSide:   shorterSide,
+		Width:         width,
+	}
 	coordinator.TaskCount = height * coordinator.ImageCount
+	pixelCount := height * width
 	for c := 0; c < coordinator.ImageCount; c++ {
-		coordinator.Images = append(coordinator.Images, image.NewRGBA(rect))
+		imageTask := &ImageTask{
+			Generated:  false,
+			Image:      image.NewRGBA(rect),
+			PixelsLeft: pixelCount,
+		}
+		coordinator.ImageTasks = append(coordinator.ImageTasks, imageTask)
 	}
 
 	newRPCServer(&coordinator, ipAddress, port)
@@ -80,10 +86,10 @@ func (c *Coordinator) GenerateTasks() {
 
 	// for each picture to be generated
 	number := 0
-	for magnification := c.magnificationStart; magnification <= c.magnificationEnd; magnification += c.magnificationStep {
+	for magnification := c.MagnificationStart; magnification <= c.MagnificationEnd; magnification += c.MagnificationStep {
 
 		// for each pixel in this particular image
-		for row := 0; row < c.height; row++ {
+		for row := 0; row < c.Settings.Height; row++ {
 			// for column := 0; column < c.width; column++ {
 			task := LineTask{
 				currentWidth:  0,
@@ -91,7 +97,7 @@ func (c *Coordinator) GenerateTasks() {
 				Iterations:    make([]int, 0),
 				Magnification: magnification,
 				Row:           row,
-				Width:         c.width,
+				Width:         c.Settings.Width,
 			}
 
 			c.Mutex.Lock()
@@ -105,6 +111,25 @@ func (c *Coordinator) GenerateTasks() {
 	close(c.TasksTodo)
 
 	Info.Printf("%s - is done generating %d tasks", c.Name, c.TaskCount)
+}
+
+func (c *Coordinator) GetColor(iterations int) color.RGBA {
+	if iterations == c.Settings.MaxIterations {
+		return color.RGBA{0, 0, 0, 255}
+	}
+	colors := []color.RGBA{
+		{25, 0, 0, 255},
+		{50, 0, 0, 255},
+		{75, 0, 0, 255},
+		{100, 0, 0, 255},
+		{125, 0, 0, 255},
+		{150, 0, 0, 255},
+		{175, 0, 0, 255},
+		{200, 0, 0, 255},
+		{225, 0, 0, 255},
+		{255, 0, 0, 255},
+	}
+	return colors[iterations%len(colors)]
 }
 
 func (c *Coordinator) RequestTask(request Nothing, reply *LineTask) error {
@@ -124,5 +149,16 @@ func (c *Coordinator) TaskFinished(request LineTask, reply *Nothing) error {
 	c.Mutex.Lock()
 	defer c.Mutex.Unlock()
 	c.TasksDone <- request
+	return nil
+}
+
+func (c *Coordinator) TaskSettings(request Nothing, reply *TaskSettings) error {
+	reply.Boundary = c.Settings.Boundary
+	reply.CenterX = c.Settings.CenterX
+	reply.CenterY = c.Settings.CenterY
+	reply.Height = c.Settings.Height
+	reply.MaxIterations = c.Settings.MaxIterations
+	reply.ShorterSide = c.Settings.ShorterSide
+	reply.Width = c.Settings.Width
 	return nil
 }

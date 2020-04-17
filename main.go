@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
-	"image/color"
 	"image/png"
 	"log"
 	"os"
 )
 
+// todo: move loggers into coordinator and workers
 var (
 	Error   *log.Logger // logLevel = 1
 	Warning *log.Logger // logLevel = 2
@@ -33,8 +33,9 @@ func main() {
 	}
 }
 
-// @todo update this to handle different task types?
-// @todo [WIP] update this to use row/column task types
+// todo: Figure out why in some cases images will not be generated (Maybe not all tasks are actually returned...)
+// todo: Figure out a way to have colors be specified in a file
+// todo: switch colors to hsv/hsl from rgb
 func startCoordinator() {
 	Debug.Printf("Starting coordinator")
 
@@ -45,23 +46,19 @@ func startCoordinator() {
 		task := <-coordinator.TasksDone
 
 		for it := 0; it < len(task.Iterations); it++ {
-			finalColor := color.RGBA{R: 255, G: 255, B: 255, A: 0xff}
-			if task.Iterations[it] == coordinator.maxIterations {
-				finalColor = color.RGBA{R: 0, G: 0, B: 0, A: 0xff}
+			coordinator.ImageTasks[task.ImageNumber].Image.SetRGBA(it, task.Row, coordinator.GetColor(task.Iterations[it]))
+			coordinator.ImageTasks[task.ImageNumber].PixelsLeft--
+			if coordinator.ImageTasks[task.ImageNumber].PixelsLeft == 0 {
+				name := fmt.Sprintf("images/%d.png", task.ImageNumber)
+				f, _ := os.Create(name)
+				png.Encode(f, coordinator.ImageTasks[task.ImageNumber].Image)
+				Info.Printf("Generated image %d", task.ImageNumber)
+				coordinator.ImageTasks[task.ImageNumber].Generated = true
 			}
-			coordinator.Images[task.ImageNumber].SetRGBA(it, task.Row, finalColor)
 		}
 	}
 	close(coordinator.TasksDone)
-
-	Info.Print("Generating images")
-	for i, image := range coordinator.Images {
-		name := fmt.Sprintf("images/%d.png", i)
-		f, _ := os.Create(name)
-		png.Encode(f, image)
-		Info.Printf("Generated image %d", i)
-	}
-	Info.Print("Done generating images")
+	Info.Printf("%s - Done generating images", coordinator.Name)
 
 	Info.Printf("%s - Shutting down", coordinator.Name)
 }

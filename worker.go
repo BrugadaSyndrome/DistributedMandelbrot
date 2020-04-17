@@ -7,44 +7,16 @@ import (
 )
 
 type Worker struct {
-	boundary      float64
-	centerX       float64
-	centerY       float64
-	height        int
-	maxIterations int
-	shorterSide   int
-	width         int
-
 	Client    *rpc.Client
+	Done      chan string
 	IpAddress string
 	Name      string
 	Port      int
-
-	Done chan string
+	Settings  TaskSettings
 }
 
 func newWorker(ipAddress string, port int, done chan string) Worker {
-	if width <= 0 {
-		Error.Fatal("Width must be greater than 0")
-	}
-	if height <= 0 {
-		Error.Fatal("Height must be greater than 0")
-	}
-
-	shorterSide := height
-	if width < height {
-		shorterSide = width
-	}
-
 	worker := Worker{
-		boundary:      boundary,
-		centerX:       centerX,
-		centerY:       centerY,
-		height:        height,
-		maxIterations: maxIterations,
-		shorterSide:   shorterSide,
-		width:         width,
-
 		IpAddress: ipAddress,
 		Name:      fmt.Sprintf("Worker[%s:%d]", ipAddress, port),
 		Port:      port,
@@ -72,36 +44,45 @@ func (w *Worker) callMaster(method string, request interface{}, reply interface{
 	maxAttempts := 3
 	var err error
 	for {
+		// The call was a success
 		err = w.Client.Call(method, request, reply)
 		if err == nil {
 			break
 		}
+		// All work is done
 		if err.Error() == "all tasks handed out" {
 			Info.Printf("%s - All tasks handed out", w.Name)
 			break
 		}
 
 		w.Client.Close()
-		Warning.Printf("Unable to call master. Attempting to open connnection again")
+		Warning.Printf("%s - Unable to call master. Attempting to open connnection again", w.Name)
 		w.Client = w.connectMaster(coordinatorAddress)
 		maxAttempts--
 		if maxAttempts <= 0 {
-			Error.Printf("Failed to call master at address: %s, method: %s, request: %v, reply: %v, error: %v", coordinatorAddress, method, request, reply, err)
+			Error.Printf("%s - failed to call master at address: %s, method: %s, request: %v, reply: %v, error: %v", w.Name, coordinatorAddress, method, request, reply, err)
 			break
 		}
 	}
 	return err
 }
 
-// @todo refactor tasks so that the master passes the centerX, centerY and magnification values first before processing any tasks
-//  	 - this eliminates the need for the worker script to be passed these variables and also the overhead in the task struct itself
 func (w *Worker) ProcessTasks() {
-	Info.Printf("%s - is now processing tasks", w.Name)
 	var junk Nothing
 	var count int
 	var startTime time.Time
 	var elapsedTime time.Duration
 
+	// Fetch task settings from coordinator
+	var settings TaskSettings
+	err := w.callMaster("Coordinator.TaskSettings", junk, &settings)
+	if err != nil {
+		Error.Fatalf("%s - Failed to get task settings: %s", w.Name, err)
+	}
+	Info.Printf("%s - Got task settings: %+v", w.Name, settings)
+	w.Settings = settings
+
+	Info.Printf("%s - is now processing tasks", w.Name)
 	startTime = time.Now()
 	for {
 		var task LineTask
@@ -136,12 +117,12 @@ func (w *Worker) ProcessTasks() {
 func (w *Worker) mandel(row int, column int, magnification float64) int {
 	// Since each pixel is from [0, height] and [0, width] and not on the real axis we need to convert
 	// the (column, row) point on the image to the (x, y) point in the real axis
-	x := w.centerX + (float64(column)-float64(w.width)/2)/(magnification*(float64(w.shorterSide)-1))
-	y := w.centerY + (float64(row)-float64(w.height)/2)/(magnification*(float64(w.shorterSide)-1))
+	x := w.Settings.CenterX + (float64(column)-float64(w.Settings.Width)/2)/(magnification*(float64(w.Settings.ShorterSide)-1))
+	y := w.Settings.CenterY + (float64(row)-float64(w.Settings.Height)/2)/(magnification*(float64(w.Settings.ShorterSide)-1))
 
 	a, b, r, i, z := x, y, 0.0, 0.0, 0.0
 	iteration := 0
-	for (r+i) <= w.boundary && iteration < w.maxIterations {
+	for (r+i) <= w.Settings.Boundary && iteration < w.Settings.MaxIterations {
 		x := r - i + a
 		y := z - r - i + b
 		r = x * x
