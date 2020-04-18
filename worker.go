@@ -2,30 +2,31 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/rpc"
+	"os"
 	"time"
 )
 
 type Worker struct {
 	Client    *rpc.Client
-	Done      chan string
+	Done      chan bool
 	IpAddress string
-	Name      string
+	Logger    *log.Logger
 	Port      int
 	Settings  TaskSettings
 }
 
-func newWorker(ipAddress string, port int, done chan string) Worker {
+func newWorker(ipAddress string, port int, done chan bool) Worker {
 	worker := Worker{
 		IpAddress: ipAddress,
-		Name:      fmt.Sprintf("Worker[%s:%d]", ipAddress, port),
+		Logger:    log.New(os.Stdout, fmt.Sprintf("Worker[%s:%d] ", ipAddress, port), log.Ldate|log.Ltime|log.Lshortfile),
 		Port:      port,
 		Done:      done,
 	}
 
 	worker.Client = worker.connectMaster(coordinatorAddress)
 
-	Info.Printf("RPC for node %s - %+v", worker.Name, worker)
 	newRPCServer(&worker, ipAddress, port)
 
 	return worker
@@ -34,9 +35,9 @@ func newWorker(ipAddress string, port int, done chan string) Worker {
 func (w *Worker) connectMaster(masterAddress string) *rpc.Client {
 	client, err := rpc.DialHTTP("tcp", masterAddress)
 	if err != nil {
-		Error.Fatalf("Failed dailing address: %s - %s", masterAddress, err)
+		log.Fatalf("Failed dailing address: %s - %s", masterAddress, err)
 	}
-	Info.Printf("Opened connection to master at %s", masterAddress)
+	w.Logger.Printf("Opened connection to master at %s", masterAddress)
 	return client
 }
 
@@ -51,16 +52,16 @@ func (w *Worker) callMaster(method string, request interface{}, reply interface{
 		}
 		// All work is done
 		if err.Error() == "all tasks handed out" {
-			Info.Printf("%s - All tasks handed out", w.Name)
+			w.Logger.Print("All tasks handed out")
 			break
 		}
 
 		w.Client.Close()
-		Warning.Printf("%s - Unable to call master. Attempting to open connnection again", w.Name)
+		w.Logger.Printf("WARNING - Unable to call master. Attempting to open connnection again")
 		w.Client = w.connectMaster(coordinatorAddress)
 		maxAttempts--
 		if maxAttempts <= 0 {
-			Error.Printf("%s - failed to call master at address: %s, method: %s, request: %v, reply: %v, error: %v", w.Name, coordinatorAddress, method, request, reply, err)
+			w.Logger.Printf("ERROR - Failed to call master at address: %s, method: %s, request: %v, reply: %v, error: %v", coordinatorAddress, method, request, reply, err)
 			break
 		}
 	}
@@ -77,12 +78,12 @@ func (w *Worker) ProcessTasks() {
 	var settings TaskSettings
 	err := w.callMaster("Coordinator.TaskSettings", junk, &settings)
 	if err != nil {
-		Error.Fatalf("%s - Failed to get task settings: %s", w.Name, err)
+		w.Logger.Fatalf("Failed to get task settings: %s", err)
 	}
-	Info.Printf("%s - Got task settings: %+v", w.Name, settings)
+	w.Logger.Printf("Got task settings from coordinator: %+v", settings)
 	w.Settings = settings
 
-	Info.Printf("%s - is now processing tasks", w.Name)
+	w.Logger.Printf("processing tasks")
 	startTime = time.Now()
 	for {
 		var task LineTask
@@ -90,7 +91,7 @@ func (w *Worker) ProcessTasks() {
 		// Ask coordinator for a task
 		err := w.callMaster("Coordinator.RequestTask", junk, &task)
 		if err != nil {
-			Debug.Printf(err.Error())
+			w.Logger.Printf(err.Error())
 			break
 		}
 
@@ -110,8 +111,9 @@ func (w *Worker) ProcessTasks() {
 	elapsedTime = time.Since(startTime)
 
 	w.Client.Close()
-	Info.Printf("%s - is done processing %d tasks in %s", w.Name, count, elapsedTime)
-	w.Done <- w.Name
+	w.Logger.Printf("done processing %d tasks in %s", count, elapsedTime)
+	w.Logger.Print("shutting down")
+	w.Done <- true
 }
 
 func (w *Worker) mandel(row int, column int, magnification float64) int {

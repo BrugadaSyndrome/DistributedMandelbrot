@@ -3,17 +3,10 @@ package main
 import (
 	"fmt"
 	"image/png"
-	"log"
 	"os"
 )
 
-// todo: move loggers into coordinator and workers
 var (
-	Error   *log.Logger // logLevel = 1
-	Warning *log.Logger // logLevel = 2
-	Info    *log.Logger // logLevel = 3
-	Debug   *log.Logger // Loglevel = 4
-
 	boundary, centerX, centerY, magnificationEnd, magnificationStart, magnificationStep float64
 	height, maxIterations, width, workerCount                                           int
 	coordinatorAddress                                                                  string
@@ -21,7 +14,6 @@ var (
 )
 
 func main() {
-	InitLogger(3)
 	parseArguemnts()
 
 	if isCoordinator {
@@ -37,9 +29,8 @@ func main() {
 // todo: Figure out a way to have colors be specified in a file
 // todo: switch colors to hsv/hsl from rgb
 func startCoordinator() {
-	Debug.Printf("Starting coordinator")
-
 	coordinator := newCoordinator(getLocalAddress(), 10000)
+	coordinator.Logger.Print("Starting coordinator")
 	go coordinator.GenerateTasks()
 
 	for c := 1; c <= coordinator.TaskCount; c++ {
@@ -52,19 +43,19 @@ func startCoordinator() {
 				name := fmt.Sprintf("images/%d.png", task.ImageNumber)
 				f, _ := os.Create(name)
 				png.Encode(f, coordinator.ImageTasks[task.ImageNumber].Image)
-				Info.Printf("Generated image %d", task.ImageNumber)
+				coordinator.Logger.Printf("Generated image %d", task.ImageNumber)
 				coordinator.ImageTasks[task.ImageNumber].Generated = true
 			}
 		}
 	}
 	close(coordinator.TasksDone)
-	Info.Printf("%s - Done generating images", coordinator.Name)
+	coordinator.Logger.Printf("Done generating images")
 
-	Info.Printf("%s - Shutting down", coordinator.Name)
+	coordinator.Logger.Printf("Shutting down")
 }
 
 func startWorker() {
-	workerDone := make(chan string, workerCount)
+	workerDone := make(chan bool, workerCount)
 
 	for i := 0; i < workerCount; i++ {
 		worker := newWorker(getLocalAddress(), 10001+i, workerDone)
@@ -76,8 +67,7 @@ func startWorker() {
 		if workerCount <= 0 {
 			break
 		}
-		name := <-workerDone
+		<-workerDone
 		workerCount--
-		Info.Printf("%s - shutting down", name)
 	}
 }

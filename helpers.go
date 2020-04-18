@@ -3,45 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"net/rpc"
-	"os"
 )
 
 type Nothing struct{}
-
-func InitLogger(logLevel int) {
-	if logLevel <= 0 {
-		logLevel = 0
-	}
-
-	errorHandle := ioutil.Discard
-	if logLevel >= 1 {
-		errorHandle = os.Stderr
-	}
-	Error = log.New(errorHandle, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
-
-	warningHandle := ioutil.Discard
-	if logLevel >= 2 {
-		warningHandle = os.Stdout
-	}
-	Warning = log.New(warningHandle, "WARNING: ", log.Ldate|log.Ltime|log.Lshortfile)
-
-	infoHandle := ioutil.Discard
-	if logLevel >= 3 {
-		infoHandle = os.Stdout
-	}
-	Info = log.New(infoHandle, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
-
-	debugHandle := ioutil.Discard
-	if logLevel >= 4 {
-		debugHandle = os.Stdout
-	}
-	Debug = log.New(debugHandle, "DEBUG: ", log.Ldate|log.Ltime|log.Lshortfile)
-}
 
 func parseArguemnts() {
 	// Coordinator values
@@ -64,26 +32,28 @@ func parseArguemnts() {
 	flag.Parse()
 
 	if !isWorker && !isCoordinator {
-		Error.Fatal("Please specify if this instance is the coordinator or a worker")
+		log.Fatal("Please specify if this instance is the coordinator or a worker")
 	} else if isWorker {
-		Debug.Println()
-		Debug.Printf("Worker got arguments:")
-		Debug.Printf("isWorker: %t\n", isWorker)
-		Debug.Printf("Coordniator Address: %s\n", coordinatorAddress)
-		Debug.Printf("WorkerCount: %d\n", workerCount)
+		fmt.Println()
+		log.Print("Workers got arguments:")
+		log.Printf("isWorker: %t\n", isWorker)
+		log.Printf("Coordniator Address: %s\n", coordinatorAddress)
+		log.Printf("WorkerCount: %d\n", workerCount)
+		fmt.Println()
 	} else if isCoordinator {
-		Debug.Println()
-		Debug.Printf("Coordinator got arguments:")
-		Debug.Printf("isCoordinator: %t\n", isCoordinator)
-		Debug.Printf("Boundary: %f\n", boundary)
-		Debug.Printf("CenterX: %f\n", centerX)
-		Debug.Printf("CenterY: %f\n", centerY)
-		Debug.Printf("Height: %d\n", height)
-		Debug.Printf("Magnification End: %f\n", magnificationEnd)
-		Debug.Printf("Magnification Start: %f\n", magnificationStart)
-		Debug.Printf("Magnification Step: %f\n", magnificationStep)
-		Debug.Printf("Max Iterations: %d\n", maxIterations)
-		Debug.Printf("Width: %d\n", width)
+		log.Println()
+		log.Print("Coordinator got arguments:")
+		log.Printf("isCoordinator: %t\n", isCoordinator)
+		log.Printf("Boundary: %f\n", boundary)
+		log.Printf("CenterX: %f\n", centerX)
+		log.Printf("CenterY: %f\n", centerY)
+		log.Printf("Height: %d\n", height)
+		log.Printf("Magnification End: %f\n", magnificationEnd)
+		log.Printf("Magnification Start: %f\n", magnificationStart)
+		log.Printf("Magnification Step: %f\n", magnificationStep)
+		log.Printf("Max Iterations: %d\n", maxIterations)
+		log.Printf("Width: %d\n", width)
+		log.Println()
 	}
 }
 
@@ -101,7 +71,7 @@ func newRPCServer(object interface{}, ipAddress string, port int) {
 
 	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", ipAddress, port))
 	if err != nil {
-		Error.Fatalf("Error creating RPC Server at address %s:%s with error: %v", ipAddress, port, err)
+		log.Fatalf("Error creating RPC Server at address %s:%d with error: %v", ipAddress, port, err)
 	}
 
 	go http.Serve(l, mux)
@@ -112,7 +82,7 @@ func getLocalAddress() string {
 
 	networkInterfaces, err := net.Interfaces()
 	if err != nil {
-		Error.Fatal("Failed to find network interface on this device")
+		log.Fatal("Failed to find network interface on this device")
 	}
 
 	// Attempt to find the first non-loop back network interface with an IP address
@@ -120,7 +90,7 @@ func getLocalAddress() string {
 		if elt.Flags&net.FlagLoopback == 0 && elt.Flags&net.FlagUp != 0 {
 			address, err := elt.Addrs()
 			if err != nil {
-				Error.Fatal("Failed to get an address form the network interface")
+				log.Fatal("Failed to get an address form the network interface")
 			}
 
 			for _, addr := range address {
@@ -135,24 +105,8 @@ func getLocalAddress() string {
 	}
 
 	if localAddress == "" {
-		Error.Fatal("Failed to find a non-loopback interface with valid address on this device")
+		log.Fatal("Failed to find a non-loopback interface with valid address on this device")
 	}
 
 	return localAddress
-}
-
-func callRPC(address string, method string, request interface{}, reply interface{}) error {
-	node, err := rpc.DialHTTP("tcp", address)
-	if err != nil {
-		Error.Printf("Failed dailing address: %s - %s", address, err)
-		return err
-	}
-	defer node.Close()
-
-	err = node.Call(method, request, reply)
-	if err != nil {
-		Error.Printf("Failed call to address: %s, method: %s, request: %v, reply: %v, error: %v", address, method, request, reply, err)
-	}
-
-	return err
 }

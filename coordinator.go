@@ -5,17 +5,19 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"log"
+	"os"
 	"sync"
 )
 
 type Coordinator struct {
 	ImageCount         int
 	ImageTasks         []*ImageTask
+	Logger             *log.Logger
 	MagnificationEnd   float64
 	MagnificationStart float64
 	MagnificationStep  float64
 	Mutex              sync.Mutex
-	Name               string
 	Settings           TaskSettings
 	TaskCount          int
 	TasksDone          chan LineTask
@@ -30,10 +32,10 @@ type ImageTask struct {
 
 func newCoordinator(ipAddress string, port int) Coordinator {
 	if width <= 0 {
-		Error.Fatal("Width must be greater than 0")
+		log.Fatal("Width must be greater than 0")
 	}
 	if height <= 0 {
-		Error.Fatal("Height must be greater than 0")
+		log.Fatal("Height must be greater than 0")
 	}
 
 	rect := image.Rectangle{
@@ -48,10 +50,10 @@ func newCoordinator(ipAddress string, port int) Coordinator {
 	coordinator := Coordinator{
 		ImageCount:         int(((magnificationEnd - magnificationStart) + 1) / magnificationStep),
 		ImageTasks:         make([]*ImageTask, 0),
+		Logger:             log.New(os.Stdout, fmt.Sprintf("Coordinator[%s:%d] ", ipAddress, port), log.Ldate|log.Ltime|log.Lshortfile),
 		MagnificationEnd:   magnificationEnd,
 		MagnificationStart: magnificationStart,
 		MagnificationStep:  magnificationStep,
-		Name:               fmt.Sprintf("Coordinator[%s:%d]", ipAddress, port),
 		TasksDone:          make(chan LineTask, 100),
 		TasksTodo:          make(chan LineTask, 100),
 	}
@@ -82,7 +84,7 @@ func newCoordinator(ipAddress string, port int) Coordinator {
 }
 
 func (c *Coordinator) GenerateTasks() {
-	Info.Printf("%s - is generating tasks", c.Name)
+	c.Logger.Print("generating tasks")
 
 	// for each picture to be generated
 	number := 0
@@ -90,7 +92,6 @@ func (c *Coordinator) GenerateTasks() {
 
 		// for each pixel in this particular image
 		for row := 0; row < c.Settings.Height; row++ {
-			// for column := 0; column < c.width; column++ {
 			task := LineTask{
 				currentWidth:  0,
 				ImageNumber:   number,
@@ -103,14 +104,13 @@ func (c *Coordinator) GenerateTasks() {
 			c.Mutex.Lock()
 			c.TasksTodo <- task
 			c.Mutex.Unlock()
-			// }
 		}
 
 		number++
 	}
 	close(c.TasksTodo)
 
-	Info.Printf("%s - is done generating %d tasks", c.Name, c.TaskCount)
+	c.Logger.Printf("done generating %d tasks", c.TaskCount)
 }
 
 func (c *Coordinator) GetColor(iterations int) color.RGBA {
@@ -138,7 +138,7 @@ func (c *Coordinator) RequestTask(request Nothing, reply *LineTask) error {
 	task, more := <-c.TasksTodo
 	if !more {
 		reply = nil
-		Info.Print("All tasks handed out")
+		c.Logger.Print("All tasks handed out")
 		return errors.New("all tasks handed out")
 	}
 	*reply = task
