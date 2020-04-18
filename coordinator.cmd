@@ -1,1 +1,1 @@
-mandelbrot.exe -centerX=-0.2 -centerY=0.75 -magnificationStart=1.00 -magnificationEnd=11.00 -magnificationStep=1.0 -isCoordinator=true -height=1080 -width=1920
+mandelbrot.exe -isCoordinator=true -centerX=-0.4 -centerY=0.0 -magnificationStart=0.4 -magnificationEnd=1.4 -magnificationStep=1.0 -height=1080 -width=1920 -paletteFile="blue_palette.json"

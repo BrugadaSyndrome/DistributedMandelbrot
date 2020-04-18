@@ -1,16 +1,19 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
 	"image/color"
+	"io/ioutil"
 	"log"
 	"os"
 	"sync"
 )
 
 type Coordinator struct {
+	Colors             []color.RGBA
 	ImageCount         int
 	ImageTasks         []*ImageTask
 	Logger             *log.Logger
@@ -48,6 +51,7 @@ func newCoordinator(ipAddress string, port int) Coordinator {
 	}
 
 	coordinator := Coordinator{
+		Colors:             make([]color.RGBA, 0),
 		ImageCount:         int(((magnificationEnd - magnificationStart) + 1) / magnificationStep),
 		ImageTasks:         make([]*ImageTask, 0),
 		Logger:             log.New(os.Stdout, fmt.Sprintf("Coordinator[%s:%d] ", ipAddress, port), log.Ldate|log.Ltime|log.Lshortfile),
@@ -117,19 +121,22 @@ func (c *Coordinator) GetColor(iterations int) color.RGBA {
 	if iterations == c.Settings.MaxIterations {
 		return color.RGBA{0, 0, 0, 255}
 	}
-	colors := []color.RGBA{
-		{25, 0, 0, 255},
-		{50, 0, 0, 255},
-		{75, 0, 0, 255},
-		{100, 0, 0, 255},
-		{125, 0, 0, 255},
-		{150, 0, 0, 255},
-		{175, 0, 0, 255},
-		{200, 0, 0, 255},
-		{225, 0, 0, 255},
-		{255, 0, 0, 255},
+	return c.Colors[iterations%len(c.Colors)]
+}
+
+func (c *Coordinator) LoadColorPalette(fileName string) {
+	file, err := os.Open(fileName)
+	if err != nil {
+		log.Fatalf("Unable to open %s", fileName)
 	}
-	return colors[iterations%len(colors)]
+	fileBytes, err := ioutil.ReadAll(file)
+	if err != nil {
+		log.Fatalf("Unable to read %s", fileName)
+	}
+	err = json.Unmarshal(fileBytes, &c.Colors)
+	if err != nil {
+		log.Fatalf("Unable to unmarshal %s", fileName)
+	}
 }
 
 func (c *Coordinator) RequestTask(request Nothing, reply *LineTask) error {

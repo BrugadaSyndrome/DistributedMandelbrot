@@ -15,13 +15,14 @@ func parseArguemnts() {
 	// Coordinator values
 	flag.BoolVar(&isCoordinator, "isCoordinator", false, "Is this instance the coordinator")
 	flag.Float64Var(&boundary, "boundary", 4.0, "Boundary escape value")
-	flag.IntVar(&maxIterations, "maxIterations", 1000, "Iterations to run to verify each point")
 	flag.Float64Var(&centerX, "centerX", -0.2, "Center x value of mandelbrot set")
 	flag.Float64Var(&centerY, "centerY", 0.75, "Center y value of mandelbrot set")
+	flag.IntVar(&height, "height", 1920, "Height of resulting image")
 	flag.Float64Var(&magnificationEnd, "magnificationEnd", 0.75, "End zoom level")
 	flag.Float64Var(&magnificationStart, "magnificationStart", 1.75, "Start zoom level")
 	flag.Float64Var(&magnificationStep, "magnificationStep", 1.0, "Number of frames")
-	flag.IntVar(&height, "height", 1920, "Height of resulting image")
+	flag.IntVar(&maxIterations, "maxIterations", 1000, "Iterations to run to verify each point")
+	flag.StringVar(&paletteFile, "paletteFile", "colors.json", "Json file with color palette")
 	flag.IntVar(&width, "width", 1080, "Width of resulting image")
 
 	// Worker values
