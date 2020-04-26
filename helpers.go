@@ -23,6 +23,7 @@ func parseArguemnts() {
 	flag.Float64Var(&magnificationStep, "magnificationStep", 1.0, "Number of frames")
 	flag.IntVar(&maxIterations, "maxIterations", 1000, "Iterations to run to verify each point")
 	flag.StringVar(&paletteFile, "paletteFile", "colors.json", "Json file with color palette")
+	flag.BoolVar(&smoothColoring, "smoothColoring", true, "Enable smooth coloring")
 	flag.IntVar(&width, "width", 1080, "Width of resulting image")
 
 	// Worker values
@@ -35,12 +36,12 @@ func parseArguemnts() {
 	if !isWorker && !isCoordinator {
 		log.Fatal("Please specify if this instance is the coordinator or a worker")
 	} else if isWorker {
-		fmt.Println()
+		log.Println()
 		log.Print("Workers got arguments:")
 		log.Printf("isWorker: %t\n", isWorker)
 		log.Printf("Coordniator Address: %s\n", coordinatorAddress)
 		log.Printf("WorkerCount: %d\n", workerCount)
-		fmt.Println()
+		log.Println()
 	} else if isCoordinator {
 		log.Println()
 		log.Print("Coordinator got arguments:")
@@ -53,6 +54,7 @@ func parseArguemnts() {
 		log.Printf("Magnification Start: %f\n", magnificationStart)
 		log.Printf("Magnification Step: %f\n", magnificationStep)
 		log.Printf("Max Iterations: %d\n", maxIterations)
+		log.Printf("Smooth Coloring: %t\n", smoothColoring)
 		log.Printf("Width: %d\n", width)
 		log.Println()
 	}

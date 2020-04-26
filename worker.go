@@ -5,66 +5,60 @@ import (
 	"log"
 	"net/rpc"
 	"os"
+	"sync"
 	"time"
 )
 
 type Worker struct {
 	Client    *rpc.Client
-	Done      chan bool
 	IpAddress string
 	Logger    *log.Logger
 	Port      int
 	Settings  TaskSettings
+	Wait      *sync.WaitGroup
 }
 
-func newWorker(ipAddress string, port int, done chan bool) Worker {
+func newWorker(ipAddress string, port int, wg *sync.WaitGroup) Worker {
 	worker := Worker{
 		IpAddress: ipAddress,
 		Logger:    log.New(os.Stdout, fmt.Sprintf("Worker[%s:%d] ", ipAddress, port), log.Ldate|log.Ltime|log.Lshortfile),
 		Port:      port,
-		Done:      done,
+		Wait:      wg,
 	}
 
-	worker.Client = worker.connectMaster(coordinatorAddress)
+	worker.Client = worker.connectCoordinator(coordinatorAddress)
 
 	newRPCServer(&worker, ipAddress, port)
 
 	return worker
 }
 
-func (w *Worker) connectMaster(masterAddress string) *rpc.Client {
+func (w *Worker) connectCoordinator(masterAddress string) *rpc.Client {
 	client, err := rpc.DialHTTP("tcp", masterAddress)
 	if err != nil {
-		log.Fatalf("Failed dailing address: %s - %s", masterAddress, err)
+		w.Logger.Fatalf("Failed dailing address: %s - %s", masterAddress, err)
 	}
-	w.Logger.Printf("Opened connection to master at %s", masterAddress)
+	w.Logger.Printf("Opened connection to coordinator at %s", masterAddress)
 	return client
 }
 
-func (w *Worker) callMaster(method string, request interface{}, reply interface{}) error {
-	maxAttempts := 3
-	var err error
-	for {
-		// The call was a success
-		err = w.Client.Call(method, request, reply)
-		if err == nil {
-			break
-		}
-		// All work is done
-		if err.Error() == "all tasks handed out" {
-			w.Logger.Print("All tasks handed out")
-			break
-		}
+func (w *Worker) callCoordinator(method string, request interface{}, reply interface{}) error {
+	err := w.Client.Call(method, request, reply)
 
-		w.Client.Close()
-		w.Logger.Printf("WARNING - Unable to call master. Attempting to open connnection again")
-		w.Client = w.connectMaster(coordinatorAddress)
-		maxAttempts--
-		if maxAttempts <= 0 {
-			w.Logger.Printf("ERROR - Failed to call master at address: %s, method: %s, request: %v, reply: %v, error: %v", coordinatorAddress, method, request, reply, err)
-			break
-		}
+	// The call was a success
+	if err == nil {
+		return nil
 	}
+
+	// All work is done
+	if err.Error() == "all tasks handed out" {
+		w.Logger.Print("All tasks handed out")
+		return err
+	}
+
+	// Unable to make the call
+	w.Client.Close()
+	w.Logger.Printf("ERROR - Failed to call coordinator at address: %s, method: %s, error: %v", coordinatorAddress, method, err)
 	return err
 }
 
@@ -74,24 +68,30 @@ func (w *Worker) ProcessTasks() {
 	var startTime time.Time
 	var elapsedTime time.Duration
 
+	// Register worker with coordinator
+	address := fmt.Sprintf("%s:%d", w.IpAddress, w.Port)
+	err := w.callCoordinator("Coordinator.RegisterWorker", address, &junk)
+	if err != nil {
+		w.Logger.Fatalf("Failed to register with coordinator: %s", err)
+	}
+
 	// Fetch task settings from coordinator
 	var settings TaskSettings
-	err := w.callMaster("Coordinator.TaskSettings", junk, &settings)
+	err = w.callCoordinator("Coordinator.GetTaskSettings", junk, &settings)
 	if err != nil {
 		w.Logger.Fatalf("Failed to get task settings: %s", err)
 	}
 	w.Logger.Printf("Got task settings from coordinator: %+v", settings)
 	w.Settings = settings
 
-	w.Logger.Printf("processing tasks")
+	w.Logger.Printf("Now processing tasks")
 	startTime = time.Now()
 	for {
 		var task LineTask
 
 		// Ask coordinator for a task
-		err := w.callMaster("Coordinator.RequestTask", junk, &task)
+		err := w.callCoordinator("Coordinator.RequestTask", junk, &task)
 		if err != nil {
-			w.Logger.Printf(err.Error())
 			break
 		}
 
@@ -105,15 +105,21 @@ func (w *Worker) ProcessTasks() {
 		}
 
 		// Return result to master
-		w.callMaster("Coordinator.TaskFinished", task, &junk)
+		err = w.callCoordinator("Coordinator.TaskFinished", task, &junk)
+		if err != nil {
+			w.Logger.Printf("WARNING - Coordinator.TaskFinished - %s", err)
+		}
 		count++
 	}
+	// Worker is done processing
 	elapsedTime = time.Since(startTime)
+	w.Logger.Printf("Done processing %d tasks in %s", count, elapsedTime)
 
+	// Inform coordinator we are leaving and shutdown
+	w.Logger.Print("Shutting down")
+	w.callCoordinator("Coordinator.DeRegisterWorker", address, &junk)
 	w.Client.Close()
-	w.Logger.Printf("done processing %d tasks in %s", count, elapsedTime)
-	w.Logger.Print("shutting down")
-	w.Done <- true
+	w.Wait.Done()
 }
 
 func (w *Worker) mandel(row int, column int, magnification float64) int {
@@ -132,6 +138,16 @@ func (w *Worker) mandel(row int, column int, magnification float64) int {
 		z = (x + y) * (x + y)
 		iteration++
 	}
+
+	// When smooth coloring, avoid potential floating point issues
+	// https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set
+	/*
+		if w.Settings.SmoothColoring && iteration < w.Settings.MaxIterations {
+			zn := math.Log(x*x + y*y) / 2
+			nu := math.Log(zn / math.Log(2)) / math.Log(2)
+			iteration = int(math.Floor(float64(iteration + 1) - nu))
+		}
+	*/
 
 	return iteration
 }
