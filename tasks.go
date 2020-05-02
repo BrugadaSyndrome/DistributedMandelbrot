@@ -19,7 +19,7 @@ type TaskSettings struct {
 type LineTask struct {
 	currentWidth  int // current width value calculating
 	ImageNumber   int
-	Iterations    []int
+	Iterations    []float64
 	Magnification float64
 	Row           int
 	Width         int // assumes 0 - width for column values
@@ -31,7 +31,7 @@ func (lt *LineTask) NextTask() (int, int, float64) {
 	}
 	return -1, -1, -1
 }
-func (lt *LineTask) RecordIteration(iteration int) {
+func (lt *LineTask) RecordIteration(iteration float64) {
 	lt.Iterations = append(lt.Iterations, iteration)
 	lt.currentWidth++
 }

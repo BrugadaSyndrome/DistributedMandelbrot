@@ -1,5 +1,8 @@
 *.png
 *.exe
+*.json
 /.idea
 /.vagrant
 /images
+mandelbrot
+mandelbrot.exe

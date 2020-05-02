@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"sync"
 )
@@ -11,8 +13,8 @@ import (
  * TODO
  *
  * Color
- * todo: switch colors from rgb to hsv/hsl
- * todo: [WIP] option to switch between palettes and smooth coloring
+ * todo: When using smooth coloring, use hsl/hsv to make better color gradients
+ * todo: Handle what to do when no palette is specified (default to a palette with just white in it and disable smooth coloring)
  * Cache iteration results in db
  * todo: [WIP] get distributed mandelbrot working inside of a multi-machine vagrant instance
  *     : including firewall stuff (avoid private network options because that wont be available normally)
@@ -55,20 +57,18 @@ func startCoordinator() {
 		for it := 0; it < len(task.Iterations); it++ {
 
 			finalColor := coordinator.GetColor(task.Iterations[it])
-			/*
-				if task.Iterations[it] != coordinator.Settings.MaxIterations && coordinator.Settings.SmoothColoring {
-					color1 := coordinator.GetColor(task.Iterations[it])
-					color2 := coordinator.GetColor(task.Iterations[it]+1)
+			if int(math.Floor(task.Iterations[it])) != coordinator.Settings.MaxIterations && coordinator.Settings.SmoothColoring {
+				color1 := coordinator.GetColor(task.Iterations[it])
+				color2 := coordinator.GetColor(task.Iterations[it] + 1)
 
-					fraction := float64(task.Iterations[it]) * 0.5
-					finalColor = color.RGBA{
-						uint8(float64(color2.R - color1.R) * fraction) + color1.R,
-						uint8(float64(color2.G - color1.G) * fraction) + color1.G,
-						uint8(float64(color2.B - color1.B) * fraction) + color1.B,
-						255,
-					}
+				_, fraction := math.Modf(task.Iterations[it])
+				finalColor = color.RGBA{
+					uint8(float64(color2.R-color1.R)*fraction) + color1.R,
+					uint8(float64(color2.G-color1.G)*fraction) + color1.G,
+					uint8(float64(color2.B-color1.B)*fraction) + color1.B,
+					255,
 				}
-			*/
+			}
 
 			coordinator.ImageTasks[task.ImageNumber].Image.SetRGBA(it, task.Row, finalColor)
 			coordinator.ImageTasks[task.ImageNumber].PixelsLeft--

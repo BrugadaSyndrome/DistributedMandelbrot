@@ -125,7 +125,7 @@ func (c *Coordinator) GenerateTasks() {
 			task := LineTask{
 				currentWidth:  0,
 				ImageNumber:   imageNumber,
-				Iterations:    make([]int, 0),
+				Iterations:    make([]float64, 0),
 				Magnification: magnification,
 				Row:           row,
 				Width:         c.Settings.Width,
@@ -143,27 +143,28 @@ func (c *Coordinator) GenerateTasks() {
 	c.Logger.Printf("Done generating %d tasks", c.TaskCount)
 }
 
-func (c *Coordinator) GetColor(iterations int) color.RGBA {
-	if iterations == c.Settings.MaxIterations {
+func (c *Coordinator) GetColor(iterations float64) color.RGBA {
+	intIterations := int(math.Floor(iterations))
+	if intIterations == c.Settings.MaxIterations {
 		return color.RGBA{0, 0, 0, 255}
 	}
-	return c.Colors[iterations%len(c.Colors)]
+	return c.Colors[intIterations%len(c.Colors)]
 }
 
 func (c *Coordinator) LoadColorPalette(fileName string) {
 	file, err := os.Open(fileName)
 	if err != nil {
-		log.Fatalf("Unable to open %s", fileName)
+		log.Fatalf("Unable to open %s - %s", fileName, err)
 	}
 	fileBytes, err := ioutil.ReadAll(file)
 	if err != nil {
-		log.Fatalf("Unable to read %s", fileName)
+		log.Fatalf("Unable to read %s - %s", fileName, err)
 	}
 	c.Mutex.Lock()
 	err = json.Unmarshal(fileBytes, &c.Colors)
 	c.Mutex.Unlock()
 	if err != nil {
-		log.Fatalf("Unable to unmarshal %s", fileName)
+		log.Fatalf("Unable to unmarshal %s - %s", fileName, err)
 	}
 }
 
