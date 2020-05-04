@@ -152,6 +152,14 @@ func (c *Coordinator) GetColor(iterations float64) color.RGBA {
 }
 
 func (c *Coordinator) LoadColorPalette(fileName string) {
+	// No palette is supplied
+	if fileName == "" {
+		c.Colors = []color.RGBA{{255, 255, 255, 255}}
+		c.Settings.SmoothColoring = false
+		c.Logger.Print("No Color palette supplied. Disabling smooth coloring.")
+		return
+	}
+
 	file, err := os.Open(fileName)
 	if err != nil {
 		log.Fatalf("Unable to open %s - %s", fileName, err)

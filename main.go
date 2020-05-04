@@ -12,15 +12,17 @@ import (
 /**
  * TODO
  *
+ * Project
+ * todo: Add readme to explain all command line options
+ * Zoom
+ * todo: improve zoom by allowing 'sliding' zooms from (x0, y0) => (x1, y1)
  * Color
  * todo: When using smooth coloring, use hsl/hsv to make better color gradients
- * todo: Handle what to do when no palette is specified (default to a palette with just white in it and disable smooth coloring)
+ * todo: Look into allowing the use of the exterior distance estimation technique
  * Cache iteration results in db
  * todo: [WIP] get distributed mandelbrot working inside of a multi-machine vagrant instance
  *     : including firewall stuff (avoid private network options because that wont be available normally)
  * todo: stashing results in mysql db
- * Zoom
- * todo: improve zoom by allowing 'sliding' zooms from (x0, y0) => (x1, y1)
  */
 
 var (
