@@ -129,6 +129,7 @@ func (w *Worker) mandel(row int, column int, magnification float64) float64 {
 	x0 := w.Settings.CenterX + (float64(column)-float64(w.Settings.Width)/2)/(magnification*(float64(w.Settings.ShorterSide)-1))
 	y0 := w.Settings.CenterY + (float64(row)-float64(w.Settings.Height)/2)/(magnification*(float64(w.Settings.ShorterSide)-1))
 
+	// Calculate the iteration value
 	x, y, x2, y2, max := 0.0, 0.0, 0.0, 0.0, float64(w.Settings.MaxIterations)
 	iteration := 0.0
 	for (x2+y2) <= w.Settings.Boundary && iteration < max {
@@ -139,9 +140,9 @@ func (w *Worker) mandel(row int, column int, magnification float64) float64 {
 		iteration++
 	}
 
-	// When smooth coloring, avoid potential floating point issues
-	// https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set
 	if w.Settings.SmoothColoring && iteration < max {
+		// https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set
+		// Calculate the normalized iteration count when smooth coloring
 		zn := math.Log(x*x+y*y) / 2
 		nu := math.Log(zn/math.Log(2)) / math.Log(2)
 		iteration = iteration + 1 - nu

@@ -12,17 +12,17 @@ import (
 /**
  * TODO
  *
- * Project
- * todo: Add readme to explain all command line options
  * Zoom
  * todo: improve zoom by allowing 'sliding' zooms from (x0, y0) => (x1, y1)
  * Color
+ * ? todo: modify color classes to implement the colors.Color interface
+ * ? todo: Use the new RGB/HSV classes to for db stuff and for coloring the image (also flesh out the palette table so we can specify a palette id in the cli parameters)
  * todo: When using smooth coloring, use hsl/hsv to make better color gradients
  * todo: Look into allowing the use of the exterior distance estimation technique
  * Cache iteration results in db
  * todo: [WIP] get distributed mandelbrot working inside of a multi-machine vagrant instance
  *     : including firewall stuff (avoid private network options because that wont be available normally)
- * todo: stashing results in mysql db
+ * todo: [WIP] stashing results in mysql db
  */
 
 var (
@@ -58,11 +58,15 @@ func startCoordinator() {
 
 		for it := 0; it < len(task.Iterations); it++ {
 
+			// Process return iteration value into final pixel colors
 			finalColor := coordinator.GetColor(task.Iterations[it])
 			if int(math.Floor(task.Iterations[it])) != coordinator.Settings.MaxIterations && coordinator.Settings.SmoothColoring {
+				// A new mixed color needs to be calculated
 				color1 := coordinator.GetColor(task.Iterations[it])
 				color2 := coordinator.GetColor(task.Iterations[it] + 1)
 
+				// Calculate the linear gradient between the two colors and mix them according to the modf value
+				// The modf value is the floating point portion of the iteration value
 				_, fraction := math.Modf(task.Iterations[it])
 				finalColor = color.RGBA{
 					uint8(float64(color2.R-color1.R)*fraction) + color1.R,

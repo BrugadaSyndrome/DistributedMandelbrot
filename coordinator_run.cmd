@@ -1,1 +1,1 @@
-mandelbrot.exe -isCoordinator=true -centerX=-0.75 -centerY=0.0 -magnificationStart=0.4 -magnificationEnd=1.4 -magnificationStep=0.1 -height=1440 -width=2560 -paletteFile="red_palette.json" -smoothColoring=true
+mandelbrot.exe -isCoordinator=true
