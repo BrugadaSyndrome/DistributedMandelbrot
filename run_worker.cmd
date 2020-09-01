@@ -1,0 +1,1 @@
+mandelbrot.exe -isWorker=true -workerCount=3

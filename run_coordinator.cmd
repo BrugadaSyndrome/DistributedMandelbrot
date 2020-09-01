@@ -1,0 +1,1 @@
+mandelbrot.exe -isCoordinator=true -magnificationStart=0.4 -magnificationEnd=5.4 -magnificationStep=0.5
