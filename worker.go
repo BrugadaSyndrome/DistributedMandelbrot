@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"log"
 	"math"
 	"net/rpc"
@@ -102,7 +103,8 @@ func (w *Worker) ProcessTasks() {
 			if row == -1 && column == -1 && magnification == -1 {
 				break
 			}
-			task.RecordIteration(w.mandel(row, column, magnification))
+
+			task.RecordColor(w.determinePixelColor(row, column, magnification))
 		}
 
 		// Return result to master
@@ -123,30 +125,88 @@ func (w *Worker) ProcessTasks() {
 	w.Wait.Done()
 }
 
-func (w *Worker) mandel(row int, column int, magnification float64) float64 {
-	// Since each pixel is from [0, height] and [0, width] and not on the real axis we need to convert
-	// the (column, row) point on the image to the (x, y) point in the real axis
-	x0 := w.Settings.CenterX + (float64(column)-float64(w.Settings.Width)/2)/(magnification*(float64(w.Settings.ShorterSide)-1))
-	y0 := w.Settings.CenterY + (float64(row)-float64(w.Settings.Height)/2)/(magnification*(float64(w.Settings.ShorterSide)-1))
-
+func (w *Worker) mandel(x float64, y float64) float64 {
 	// Calculate the iteration value
-	x, y, x2, y2, max := 0.0, 0.0, 0.0, 0.0, float64(w.Settings.MaxIterations)
+	x1, y1, x2, y2, max := 0.0, 0.0, 0.0, 0.0, float64(w.Settings.MaxIterations)
 	iteration := 0.0
 	for (x2+y2) <= w.Settings.Boundary && iteration < max {
-		y = 2*x*y + y0
-		x = x2 - y2 + x0
-		x2 = x * x
-		y2 = y * y
+		y1 = 2*x1*y1 + y
+		x1 = x2 - y2 + x
+		x2 = x1 * x1
+		y2 = y1 * y1
 		iteration++
 	}
 
 	if w.Settings.SmoothColoring && iteration < max {
 		// https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set
 		// Calculate the normalized iteration count when smooth coloring
-		zn := math.Log(x*x+y*y) / 2
+		zn := math.Log(x1*x1+y1*y1) / 2
 		nu := math.Log(zn/math.Log(2)) / math.Log(2)
 		iteration = iteration + 1 - nu
 	}
 
 	return iteration
+}
+
+func (w *Worker) determinePixelColor(row int, column int, magnification float64) color.RGBA {
+	subPixels := []float64{0}
+	var finalColor color.RGBA
+
+	// Using grid super sampling
+	if w.Settings.SuperSampling > 1 {
+		subPixels = []float64{}
+		for i := 0; i < w.Settings.SuperSampling; i++ {
+			subPixels = append(subPixels, ((0.5+float64(i))/float64(w.Settings.SuperSampling))-0.5)
+		}
+	}
+
+	// Collect each sample
+	var colorSamples []color.RGBA
+	var iteration float64
+	for _, sx := range subPixels {
+		for _, sy := range subPixels {
+			// Convert the (column, row) point on the image to the (x, y) point in the imaginary axis
+			x := w.Settings.CenterX + ((float64(column)-float64(w.Settings.Width)/2)+sx)/(magnification*(float64(w.Settings.ShorterSide)-1))
+			y := w.Settings.CenterY + ((float64(row)-float64(w.Settings.Height)/2)-sy)/(magnification*(float64(w.Settings.ShorterSide)-1))
+			iteration = w.mandel(x, y)
+			colorSamples = append(colorSamples, w.GetColor(iteration))
+		}
+	}
+
+	// Set the final color to the only sample taken in case super sampling is not used
+	finalColor = colorSamples[0]
+
+	// Generate the final super sampled color
+	if w.Settings.SuperSampling > 1 {
+		var r, g, b, a int
+		for _, sample := range colorSamples {
+			r += int(sample.R)
+			g += int(sample.G)
+			b += int(sample.B)
+			a += int(sample.A)
+		}
+		divisor := len(colorSamples)
+		finalColor = color.RGBA{R: uint8(r / divisor), G: uint8(g / divisor), B: uint8(b / divisor), A: uint8(a / divisor)}
+	}
+
+	// Apply Smooth coloring if enabled
+	if int(math.Floor(iteration)) != w.Settings.MaxIterations && w.Settings.SmoothColoring {
+		// The modf value is the floating point portion of the iteration value
+		_, fraction := math.Modf(iteration)
+
+		// Make the new mixed color
+		color1 := w.GetColor(iteration)
+		color2 := w.GetColor(iteration + 1)
+		finalColor = linearInterpolationRGB(color1, color2, fraction)
+	}
+
+	return finalColor
+}
+
+func (w *Worker) GetColor(iterations float64) color.RGBA {
+	intIterations := int(math.Floor(iterations))
+	if intIterations == w.Settings.MaxIterations {
+		return color.RGBA{R: 0, G: 0, B: 0, A: 255}
+	}
+	return w.Settings.Colors[intIterations%len(w.Settings.Colors)]
 }

@@ -24,6 +24,7 @@ func parseArguemnts() {
 	flag.IntVar(&maxIterations, "maxIterations", 1000, "Iterations to run to verify each point")
 	flag.StringVar(&paletteFile, "paletteFile", "", "Json file with color palette")
 	flag.BoolVar(&smoothColoring, "smoothColoring", true, "Enable smooth coloring")
+	flag.IntVar(&superSampling, "superSampling", 1, "The level of aliasing to perform on the image")
 	flag.IntVar(&width, "width", 1920, "Width of resulting image")
 
 	// Worker values
@@ -56,8 +57,19 @@ func parseArguemnts() {
 		log.Printf("Max Iterations: %d\n", maxIterations)
 		log.Printf("Palette File: %s\n", paletteFile)
 		log.Printf("Smooth Coloring: %t\n", smoothColoring)
+		log.Printf("Super Sampling: %d\n", superSampling)
 		log.Printf("Width: %d\n", width)
 		log.Println()
+
+		// Handle bad settings that can cause issues
+		if paletteFile == "" && smoothColoring == true {
+			smoothColoring = false
+			log.Print("No Color palette was supplied. Disabling smooth coloring.")
+		}
+		if superSampling < 1 {
+			superSampling = 1
+			log.Print("Setting superSampling to 1")
+		}
 	}
 }
 

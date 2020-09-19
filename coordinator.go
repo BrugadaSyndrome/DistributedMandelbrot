@@ -15,7 +15,6 @@ import (
 )
 
 type Coordinator struct {
-	Colors             []color.RGBA
 	ImageCount         int
 	ImageTasks         []*ImageTask
 	Logger             *log.Logger
@@ -23,7 +22,7 @@ type Coordinator struct {
 	MagnificationStart float64
 	MagnificationStep  float64
 	Mutex              sync.Mutex
-	Settings           TaskSettings
+	Settings           *TaskSettings
 	TaskCount          int
 	TasksDone          chan LineTask
 	TasksTodo          chan LineTask
@@ -55,7 +54,6 @@ func newCoordinator(ipAddress string, port int) Coordinator {
 	}
 
 	coordinator := Coordinator{
-		Colors:             make([]color.RGBA, 0),
 		ImageCount:         int(math.Ceil((magnificationEnd - magnificationStart) / magnificationStep)),
 		ImageTasks:         make([]*ImageTask, 0),
 		Logger:             log.New(os.Stdout, fmt.Sprintf("Coordinator[%s:%d] ", ipAddress, port), log.Ldate|log.Ltime|log.Lshortfile),
@@ -68,14 +66,16 @@ func newCoordinator(ipAddress string, port int) Coordinator {
 		Workers:            make(map[string]*rpc.Client, 0),
 	}
 
-	coordinator.Settings = TaskSettings{
+	coordinator.Settings = &TaskSettings{
 		Boundary:       boundary,
 		CenterX:        centerX,
 		CenterY:        centerY,
+		Colors:         []color.RGBA{{R: 255, G: 255, B: 255, A: 255}},
 		Height:         height,
 		MaxIterations:  maxIterations,
 		ShorterSide:    shorterSide,
 		SmoothColoring: smoothColoring,
+		SuperSampling:  superSampling,
 		Width:          width,
 	}
 	coordinator.TaskCount = height * coordinator.ImageCount
@@ -125,7 +125,7 @@ func (c *Coordinator) GenerateTasks() {
 			task := LineTask{
 				currentWidth:  0,
 				ImageNumber:   imageNumber,
-				Iterations:    make([]float64, 0),
+				Colors:        make([]color.RGBA, 0),
 				Magnification: magnification,
 				Row:           row,
 				Width:         c.Settings.Width,
@@ -143,20 +143,9 @@ func (c *Coordinator) GenerateTasks() {
 	c.Logger.Printf("Done generating %d tasks", c.TaskCount)
 }
 
-func (c *Coordinator) GetColor(iterations float64) color.RGBA {
-	intIterations := int(math.Floor(iterations))
-	if intIterations == c.Settings.MaxIterations {
-		return color.RGBA{0, 0, 0, 255}
-	}
-	return c.Colors[intIterations%len(c.Colors)]
-}
-
 func (c *Coordinator) LoadColorPalette(fileName string) {
 	// No palette is supplied
 	if fileName == "" {
-		c.Colors = []color.RGBA{{255, 255, 255, 255}}
-		c.Settings.SmoothColoring = false
-		c.Logger.Print("No Color palette supplied. Disabling smooth coloring.")
 		return
 	}
 
@@ -169,7 +158,7 @@ func (c *Coordinator) LoadColorPalette(fileName string) {
 		log.Fatalf("Unable to read %s - %s", fileName, err)
 	}
 	c.Mutex.Lock()
-	err = json.Unmarshal(fileBytes, &c.Colors)
+	err = json.Unmarshal(fileBytes, &c.Settings.Colors)
 	c.Mutex.Unlock()
 	if err != nil {
 		log.Fatalf("Unable to unmarshal %s - %s", fileName, err)
@@ -198,13 +187,19 @@ func (c *Coordinator) TaskFinished(request LineTask, reply *Nothing) error {
 
 func (c *Coordinator) GetTaskSettings(request Nothing, reply *TaskSettings) error {
 	c.Mutex.Lock()
+
+	// todo: figure out why I cannot just assign the c.Settings struct to reply...
+	// reply = c.Settings
+
 	reply.Boundary = c.Settings.Boundary
 	reply.CenterX = c.Settings.CenterX
 	reply.CenterY = c.Settings.CenterY
+	reply.Colors = c.Settings.Colors
 	reply.Height = c.Settings.Height
 	reply.MaxIterations = c.Settings.MaxIterations
 	reply.ShorterSide = c.Settings.ShorterSide
 	reply.SmoothColoring = c.Settings.SmoothColoring
+	reply.SuperSampling = c.Settings.SuperSampling
 	reply.Width = c.Settings.Width
 	c.Mutex.Unlock()
 	return nil

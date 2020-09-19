@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"image/color"
 	"image/png"
-	"math"
 	"os"
 	"sync"
 )
@@ -27,7 +25,7 @@ import (
 
 var (
 	boundary, centerX, centerY, magnificationEnd, magnificationStart, magnificationStep float64
-	height, maxIterations, width, workerCount                                           int
+	height, maxIterations, superSampling, width, workerCount                            int
 	coordinatorAddress, paletteFile                                                     string
 	isWorker, isCoordinator, smoothColoring                                             bool
 )
@@ -48,41 +46,29 @@ func startCoordinator() {
 	coordinator := newCoordinator(getLocalAddress(), 10000)
 	coordinator.Logger.Print("Starting coordinator")
 
-	coordinator.LoadColorPalette(paletteFile)
-	coordinator.Logger.Printf("Loaded color palette with %d colors", len(coordinator.Colors))
+	if paletteFile != "" {
+		coordinator.LoadColorPalette(paletteFile)
+	}
+	coordinator.Logger.Printf("Loaded color palette with %d colors", len(coordinator.Settings.Colors))
 
 	go coordinator.GenerateTasks()
 
 	for c := 1; c <= coordinator.TaskCount; c++ {
 		task := <-coordinator.TasksDone
 
-		for it := 0; it < len(task.Iterations); it++ {
-
-			// Process return iteration value into final pixel colors
-			finalColor := coordinator.GetColor(task.Iterations[it])
-			if int(math.Floor(task.Iterations[it])) != coordinator.Settings.MaxIterations && coordinator.Settings.SmoothColoring {
-				// A new mixed color needs to be calculated
-				color1 := coordinator.GetColor(task.Iterations[it])
-				color2 := coordinator.GetColor(task.Iterations[it] + 1)
-
-				// Calculate the linear gradient between the two colors and mix them according to the modf value
-				// The modf value is the floating point portion of the iteration value
-				_, fraction := math.Modf(task.Iterations[it])
-				finalColor = color.RGBA{
-					uint8(float64(color2.R-color1.R)*fraction) + color1.R,
-					uint8(float64(color2.G-color1.G)*fraction) + color1.G,
-					uint8(float64(color2.B-color1.B)*fraction) + color1.B,
-					255,
-				}
-			}
-
-			coordinator.ImageTasks[task.ImageNumber].Image.SetRGBA(it, task.Row, finalColor)
+		for it := 0; it < len(task.Colors); it++ {
+			// Draw pixel on the image
+			coordinator.ImageTasks[task.ImageNumber].Image.SetRGBA(it, task.Row, task.Colors[it])
 			coordinator.ImageTasks[task.ImageNumber].PixelsLeft--
+
+			// Generate the image once all pixels are filled
 			if coordinator.ImageTasks[task.ImageNumber].PixelsLeft == 0 {
 				name := fmt.Sprintf("images/%d.png", task.ImageNumber)
 				f, _ := os.Create(name)
 				png.Encode(f, coordinator.ImageTasks[task.ImageNumber].Image)
+				coordinator.Mutex.Lock()
 				coordinator.ImageTasks[task.ImageNumber].Generated = true
+				coordinator.Mutex.Unlock()
 				coordinator.Logger.Printf("Generated image %d [completed tasks %d/%d]", task.ImageNumber, c, coordinator.TaskCount)
 			}
 		}
