@@ -60,8 +60,8 @@ func newCoordinator(ipAddress string, port int) Coordinator {
 		MagnificationEnd:   magnificationEnd,
 		MagnificationStart: magnificationStart,
 		MagnificationStep:  magnificationStep,
-		TasksDone:          make(chan LineTask, 100),
-		TasksTodo:          make(chan LineTask, 100),
+		TasksDone:          make(chan LineTask, 1000),
+		TasksTodo:          make(chan LineTask, 1000),
 		Wait:               &sync.WaitGroup{},
 		Workers:            make(map[string]*rpc.Client, 0),
 	}
