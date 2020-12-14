@@ -1,0 +1,31 @@
+{
+    "Boundary": 1000,
+    "CenterX": -1.62917,
+    "CenterY": 0,
+    "EnableWebInterface": false,
+    "Height": 2160,
+    "MagnificationStart": 25,
+    "MagnificationEnd": 26,
+    "MagnificationStep": 1,
+    "MaxIterations": 1000,
+    "GeneratePaletteSettings": [
+        {
+            "StartColor": {
+                "R": 255,
+                "G": 0,
+                "B": 0,
+                "A": 255
+            },
+            "EndColor": {
+                "R": 0,
+                "G": 255,
+                "B": 255,
+                "A": 255
+            },
+            "NumberColors": 50
+        }
+    ],
+    "SmoothColoring": true,
+    "SuperSampling": 4,
+    "Width": 4096
+}

@@ -1,6 +1,4 @@
-*.png
 *.exe
-*.json
 /.idea
 /.vagrant
 /images

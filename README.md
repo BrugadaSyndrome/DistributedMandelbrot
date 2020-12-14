@@ -1,28 +1,58 @@
 # Distributed Mandelbrot
 
-## CLI Options
-I tried to make all parameters have a reasonable default but supplying these parameters should give you plenty of
-options when messing around with generating images.
+This program is able to generate Mandelbrot images in a distributed manor. It leverages RPC calls to allow the worker
+instance to be on the same or different hardware as the coordinator instance.
 
-The notation for the Coordinator and Worker sections below is:
-name (type: default value) - description
+### CLI Options
 
-### Coordinator
-* isCoordinator (boolean: false) - Set this to true to run this instance as the Coordinator
-* boundary (integer: 4.0) - The escape boundary that the mandel process should bail out at
-* centerX (integer: -0.5) - The center X point to generate the image from
-* centerY (integer: 0) - The center Y point to generate the image from
-* height (integer: 1080) - The height of the resulting image(s)
-* magnificationEnd (float: 1.5) - The zoom level to end generating images at
-* magnificationStart (float: 0.5) - The zoom level to start generating images at
-* magnificationStep (float: 1.0) - The amount to zoom between each generated image
-* maxIterations (integer: 1000) - The iteration count that the mandel process should bail out at
-* paletteFile (string: '') - Specify a json file with a list of RGBA values to be used as the color palette like so:
- [ {"R": 1, "G": 0, "B": 0, "A": 255}, {"R": 0, "G": 1, "B": 0, "A": 255} ]
- * smoothColoring (boolean: false) - Enable smooth coloring technique
- * width (integer: 1920) - The width of the resulting image
+To keep things simple the number of cli options are limited to these two settings.
 
-### Worker
-* isWorker (boolean: false) - Set this to true to run this instance as a worker pool
-* coordinatorAddress (string: 'localhost:10000') - The ip address the workers should use to communicate with the coordinator
-* WorkerCount (integer: 2) - Set the number of worker threads to spin up
+* mode - Set this to 'coordinator' or 'worker' to specify what mode you want the program instance to run in.
+* settings - Set this to the name of the json file with the settings you want to use. The coordinator and the worker
+  modes have different options that can be specified in the json file. These options are explained in further detail
+  below.
+
+### Coordinator Mode Settings
+
+When the program runs in coordinator mode, the program will generate tasks for the workers to do and then use the
+results from the workers to generate the final image(s). **An instance of this mode should be up and running before
+another instance is started in worker mode.**
+
+The coordinator mode settings json file has the following settings you can specify:
+
+* Boundary (integer: 100) - The escape boundary that the mandel process should bail out at
+* CenterX (integer: 0) - The x part of the coordinate to center the image(s) on
+* CenterY (integer: 0) - The y part of the coordinate to center the image(s) on
+* EnableWebInterface (bool: false) - **WIP Feature**.
+* EscapeColor (color.RGBA) - Specify the color to fill in the points in the Mandelbrot set
+* GeneratePaletteSettings ([]GeneratePaletteSettings) - Specify list of GeneratePaletteSettings objects (see
+  coordinator.go file) to be used to generate a color palette. This feature is useful when you want to use a large color
+  palette and don't want to type it out yourself. Example:
+  ```[ { "StartColor": {"R": 255, "G": 0, "B": 0, "A": 255}, "EndColor": {"R": 0, "G": 255, "B": 255, "A": 255}, "NumberColors": 50 } ]```
+  **When this setting is specified, then the Palette option will be ignored.**
+* Height (integer: 1080) - The height of the resulting image(s)
+* MagnificationEnd (float: 1.5) - The zoom level to end generating images at
+* MagnificationStart (float: 0.5) - The zoom level to start generating images at
+* MagnificationStep (float: 1.0) - The amount to zoom between each generated image
+* MaxIterations (integer: 1000) - The iteration count that the mandel process should bail out at
+* Palette ([]color.RGBA) - Specify list of color.RGBA objects to be used as the color palette like so:
+  ```[ {"R": 255, "G": 0, "B": 0, "A": 255}, {"R": 0, "G": 255, "B": 0, "A": 255} , {"R": 0, "G": 0, "B": 255, "A": 255} ].```
+  **When the GeneratePaletteSettings is specified, then this option will be ignored.**
+* SmoothColoring (boolean: false) - Enable smooth coloring technique to blend between colors. **Must have more than one
+  color in the palette to use this feature.**
+* SuperSampling (int: 1) - The amount of super sampling (anti-aliasing) to use. Setting this to 1 means no AA.
+  **Using this feature will increase each task workload exponentially.**
+* Width (integer: 1920) - The width of the resulting image(s)
+
+### Worker Mode Settings
+
+When the program is run in worker mode, it processes the tasks that are given it by the coordinator. **An instance of
+this mode should not be run until another instance in coordinator mode is running already**
+
+The worker mode settings json file has the following settings you can specify:
+
+* CoordinatorAddress (string: localhost) - The address the coordinator is using
+* CoordinatorPort (int: 10000) - The port the coordinator is using
+* WorkerCount (int: 2) - The number of worker threads to run.
+* WorkerAddress (string: localhost) - The IP address the worker will use.
+* WorkerPort (int: 100001) - The port the worker will use.

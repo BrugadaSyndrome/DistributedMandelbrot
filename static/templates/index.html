@@ -1,0 +1,90 @@
+<html lang="en">
+<head>
+    <title>Index</title>
+    <!-- <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css"> -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/picnic">
+    <link rel="stylesheet" type="text/css" href="static/index.css">
+</head>
+
+<body>
+<div class="tabs three">
+    <input id="tab-1" type="radio" name="tabgroup" checked>
+    <label class="pseudo button toggle" for="tab-1">1. Settings</label>
+    <input id="tab-2" type="radio" name="tabgroup">
+    <label class="pseudo button toggle" for="tab-2">2. Coordinator</label>
+    <input id="tab-3" type="radio" name="tabgroup">
+    <label class="pseudo button toggle" for="tab-3">3. Workers</label>
+
+    <div class="row">
+        <!-- settings -->
+        <div>
+            <h4>Resolution</h4>
+            <div class="flex two">
+                <div><label for="width">Width</label><input id="width" type="number" value="{{ .Settings.Width }}"/>
+                </div>
+                <div><label for="height">Height</label><input id="height" type="number" value="{{ .Settings.Height }}"/>
+                </div>
+            </div>
+
+            <h4>Zoom</h4>
+            <div class="flex two">
+                <div><label for="centerX">Center X</label><input id="centerX" type="number"
+                                                                 value="{{ .Settings.CenterX }}"/></div>
+                <div><label for="centerY">Center Y</label><input id="centerY" type="number"
+                                                                 value="{{ .Settings.CenterY }}"/></div>
+            </div>
+            <div class="flex three">
+                <div><label for="magnificationStart">Magnification Start</label><input id="magnificationStart"
+                                                                                       type="number"
+                                                                                       value="{{ .MagnificationStart }}"/>
+                </div>
+                <div><label for="magnificationEnd">Magnification End</label><input id="magnificationEnd" type="number"
+                                                                                   value="{{ .MagnificationEnd }}"/>
+                </div>
+                <div><label for="magnificationStep">Magnification Step</label><input id="magnificationStep"
+                                                                                     type="number"
+                                                                                     value="{{ .MagnificationStep }}"/>
+                </div>
+            </div>
+
+            <h4>Color</h4>
+            <div class="flex two">
+                <div><input type="checkbox" id="smoothColoring" {{ if .Settings.SmoothColoring }}checked{{ end
+                            }}/><label for="smoothColoring" class="checkable">Smooth Coloring</label></div>
+                <div><input id="paletteFile" type="file" name="paletteFile" value=""/></div>
+            </div>
+            <div class="flex one" {{ if not .Settings.SmoothColoring }}style="display: none;" {{ end }}>
+                {{ range .Settings.Colors }}
+                <div style="width: 100px; height: 25px; padding: 0 0; text-align: right; background-color: rgba({{ .R }},{{ .G }},{{ .B }},{{ .A }})"></div>
+                {{ end }}
+            </div>
+
+            <h4>Bailout</h4>
+            <div class="flex two">
+                <div><label for="boundary">Boundary</label><input id="boundary" type="number"
+                                                                  value="{{ .Settings.Boundary }}"/></div>
+                <div><label for="maxIterations">Max Iterations</label><input id="maxIterations" type="number"
+                                                                             value="{{ .Settings.MaxIterations }}"/>
+                </div>
+            </div>
+
+            <button id="reset_settings" type="reset" class="warning">Reset to Defaults</button>
+            <button id="submit_settings" type="submit">Use Settings</button>
+        </div>
+
+        <!-- coordinator -->
+        <div>
+            <div class="">Nothing</div>
+        </div>
+
+        <!-- workers -->
+        <div>
+            <div class="">Nothing</div>
+        </div>
+    </div>
+</div>
+
+<!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script> -->
+<script type="text/javascript" src="static/index.js"></script>
+</body>
+</html>

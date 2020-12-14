@@ -1,55 +1,82 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"html/template"
 	"image/png"
+	"log"
 	"os"
 	"sync"
 )
 
 /**
  * TODO
- *
+ * Settings
+ * todo: add option to specify if a png or jpeg will be generated
+ * todo: add option to generate movie (as well as a way to generate a movie)
+ * Documentation
+ * todo: update readme to reflect major changes
+ * Web Interface
+ * todo: figure out how it should work (settings, coordinator and worker tabs maybe)
  * Zoom
  * todo: improve zoom by allowing 'sliding' zooms from (x0, y0) => (x1, y1)
- * Color
- * ? todo: modify color classes to implement the colors.Color interface
- * ? todo: Use the new RGB/HSV classes to for db stuff and for coloring the image (also flesh out the palette table so we can specify a palette id in the cli parameters)
- * todo: When using smooth coloring, use hsl/hsv to make better color gradients
- * todo: Look into allowing the use of the exterior distance estimation technique
  * Cache iteration results in db
- * todo: [WIP] get distributed mandelbrot working inside of a multi-machine vagrant instance
+ * todo: get distributed mandelbrot working inside of a multi-machine vagrant instance
  *     : including firewall stuff (avoid private network options because that wont be available normally)
- * todo: [WIP] stashing results in mysql db
+ * todo: stashing results in mysql db
+ * Color
+ * todo: Add in other color interpolation options (HSV, HSL, LAB, ...)
+ * todo: Look into allowing the use of the exterior distance estimation technique
  */
 
 var (
-	boundary, centerX, centerY, magnificationEnd, magnificationStart, magnificationStep float64
-	height, maxIterations, superSampling, width, workerCount                            int
-	coordinatorAddress, paletteFile                                                     string
-	isWorker, isCoordinator, smoothColoring                                             bool
+	mode, settingsFile string
+	templates          *template.Template
 )
 
 func main() {
-	parseArguemnts()
+	parseArguments()
 
-	if isCoordinator {
-		startCoordinator()
-	}
-
-	if isWorker {
-		startWorker()
+	switch mode {
+	case "coordinator":
+		startCoordinatorMode(settingsFile)
+		break
+	case "worker":
+		startWorkerMode(settingsFile)
+		break
+	default:
+		log.Fatalf("Unknown mode '%s'. Please set the mode to 'coordinator' or 'worker'", mode)
 	}
 }
 
-func startCoordinator() {
-	coordinator := newCoordinator(getLocalAddress(), 10000)
+func startCoordinatorMode(settingsFile string) {
+	var settings CoordinatorSettings
+
+	// Read in settings
+	if settingsFile != "" {
+		err, fileBytes := readFile(settingsFile)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		err = json.Unmarshal(fileBytes, &settings)
+		if err != nil {
+			log.Fatalf("Unable to unmarshal %s - %s", settingsFile, err)
+		}
+	}
+	err := settings.Verify()
+	if err != nil {
+		log.Fatalf("Unable to use settings - %s", err)
+	}
+	log.Print(settings.String())
+
+	coordinator := newCoordinator(settings, getLocalAddress(), 10000)
 	coordinator.Logger.Print("Starting coordinator")
 
-	if paletteFile != "" {
-		coordinator.LoadColorPalette(paletteFile)
+	// todo: if web interface is being used then dont start generating tasks yet
+	if settings.EnableWebInterface {
+		_ = coordinator.StartWebInterface()
 	}
-	coordinator.Logger.Printf("Loaded color palette with %d colors", len(coordinator.Settings.Colors))
 
 	go coordinator.GenerateTasks()
 
@@ -66,8 +93,7 @@ func startCoordinator() {
 				name := fmt.Sprintf("images/%d.png", task.ImageNumber)
 				f, _ := os.Create(name)
 				png.Encode(f, coordinator.ImageTasks[task.ImageNumber].Image)
-				coordinator.Mutex.Lock()
-				coordinator.ImageTasks[task.ImageNumber].Generated = true
+				coordinator.ImageTasks[task.ImageNumber].Completed = true
 				coordinator.Mutex.Unlock()
 				coordinator.Logger.Printf("Generated image %d [completed tasks %d/%d]", task.ImageNumber, c, coordinator.TaskCount)
 			}
@@ -84,12 +110,30 @@ func startCoordinator() {
 	coordinator.Logger.Print("Shutting down")
 }
 
-func startWorker() {
+func startWorkerMode(settingsFile string) {
 	var wg sync.WaitGroup
+	var settings WorkerSettings
 
-	// Start up request amount of workers
-	for i := 0; i < workerCount; i++ {
-		worker := newWorker(getLocalAddress(), 10001+i, &wg)
+	// Read in settings
+	if settingsFile != "" {
+		err, fileBytes := readFile(settingsFile)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		err = json.Unmarshal(fileBytes, &settings)
+		if err != nil {
+			log.Fatalf("Unable to unmarshal %s - %s", settingsFile, err)
+		}
+	}
+	err := settings.Verify()
+	if err != nil {
+		log.Fatalf("Unable to use settings - %s", err)
+	}
+	log.Print(settings.String())
+
+	// Start up requested amount of workers
+	for i := 0; i < settings.WorkerCount; i++ {
+		worker := newWorker(settings, i, &wg)
 		wg.Add(1)
 		go worker.ProcessTasks()
 	}

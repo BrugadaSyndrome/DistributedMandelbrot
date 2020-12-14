@@ -11,26 +11,69 @@ import (
 	"time"
 )
 
-type Worker struct {
-	Client    *rpc.Client
-	IpAddress string
-	Logger    *log.Logger
-	Port      int
-	Settings  TaskSettings
-	Wait      *sync.WaitGroup
+/* WorkerSettings */
+type WorkerSettings struct {
+	CoordinatorAddress string
+	CoordinatorPort    int
+	WorkerCount        int
+	WorkerAddress      string
+	WorkerPort         int
 }
 
-func newWorker(ipAddress string, port int, wg *sync.WaitGroup) Worker {
+func (ws *WorkerSettings) String() string {
+	output := "\nWorker settings are: \n"
+	output += fmt.Sprintf("Coordinator Address: %s\n", ws.CoordinatorAddress)
+	output += fmt.Sprintf("Coordinator Port: %d\n", ws.CoordinatorPort)
+	output += fmt.Sprintf("Worker Address: %s\n", ws.WorkerAddress)
+	output += fmt.Sprintf("Worker Count: %d\n", ws.WorkerCount)
+	output += fmt.Sprintf("Worker Port Range: %d-%d\n", ws.WorkerPort, ws.WorkerPort+ws.WorkerCount-1)
+	return output
+}
+
+func (ws *WorkerSettings) Verify() error {
+	if ws.CoordinatorAddress == "" {
+		ws.CoordinatorAddress = getLocalAddress()
+	}
+	if ws.CoordinatorPort <= 0 {
+		ws.CoordinatorPort = 10000
+	}
+	if ws.WorkerAddress == "" {
+		ws.WorkerAddress = getLocalAddress()
+	}
+	if ws.WorkerCount <= 0 {
+		ws.WorkerCount = 2
+	}
+	if ws.WorkerPort <= 0 {
+		ws.WorkerPort = 10001
+	}
+	return nil
+}
+
+/* Worker */
+type Worker struct {
+	CoordinatorAddress string
+	Client             *rpc.Client
+	MyAddress          string
+	Logger             *log.Logger
+	Port               int
+	TaskSettings       TaskSettings
+	Wait               *sync.WaitGroup
+}
+
+func newWorker(settings WorkerSettings, portOffset int, wg *sync.WaitGroup) Worker {
+	port := settings.WorkerPort + portOffset
+
 	worker := Worker{
-		IpAddress: ipAddress,
-		Logger:    log.New(os.Stdout, fmt.Sprintf("Worker[%s:%d] ", ipAddress, port), log.Ldate|log.Ltime|log.Lshortfile),
-		Port:      port,
-		Wait:      wg,
+		CoordinatorAddress: fmt.Sprintf("%s:%d", settings.CoordinatorAddress, settings.CoordinatorPort),
+		MyAddress:          settings.WorkerAddress,
+		Logger:             log.New(os.Stdout, fmt.Sprintf("Worker[%s:%d] ", settings.WorkerAddress, port), log.Ldate|log.Ltime|log.Lshortfile),
+		Port:               port,
+		Wait:               wg,
 	}
 
-	worker.Client = worker.connectCoordinator(coordinatorAddress)
+	worker.Client = worker.connectCoordinator(fmt.Sprintf("%s:%d", settings.CoordinatorAddress, settings.CoordinatorPort))
 
-	newRPCServer(&worker, ipAddress, port)
+	newRPCServer(&worker, settings.WorkerAddress, port)
 
 	return worker
 }
@@ -38,7 +81,7 @@ func newWorker(ipAddress string, port int, wg *sync.WaitGroup) Worker {
 func (w *Worker) connectCoordinator(masterAddress string) *rpc.Client {
 	client, err := rpc.DialHTTP("tcp", masterAddress)
 	if err != nil {
-		w.Logger.Fatalf("Failed dailing address: %s - %s", masterAddress, err)
+		w.Logger.Fatalf("Failed dialing address: %s - %s", masterAddress, err)
 	}
 	w.Logger.Printf("Opened connection to coordinator at %s", masterAddress)
 	return client
@@ -60,7 +103,7 @@ func (w *Worker) callCoordinator(method string, request interface{}, reply inter
 
 	// Unable to make the call
 	w.Client.Close()
-	w.Logger.Printf("ERROR - Failed to call coordinator at address: %s, method: %s, error: %v", coordinatorAddress, method, err)
+	w.Logger.Printf("ERROR - Failed to call coordinator at address: %s, method: %s, error: %v", w.CoordinatorAddress, method, err)
 	return err
 }
 
@@ -71,7 +114,7 @@ func (w *Worker) ProcessTasks() {
 	var elapsedTime time.Duration
 
 	// Register worker with coordinator
-	address := fmt.Sprintf("%s:%d", w.IpAddress, w.Port)
+	address := fmt.Sprintf("%s:%d", w.MyAddress, w.Port)
 	err := w.callCoordinator("Coordinator.RegisterWorker", address, &junk)
 	if err != nil {
 		w.Logger.Fatalf("Failed to register with coordinator: %s", err)
@@ -84,7 +127,7 @@ func (w *Worker) ProcessTasks() {
 		w.Logger.Fatalf("Failed to get task settings: %s", err)
 	}
 	w.Logger.Printf("Got task settings from coordinator: %+v", settings)
-	w.Settings = settings
+	w.TaskSettings = settings
 
 	w.Logger.Printf("Now processing tasks")
 	startTime = time.Now()
@@ -127,9 +170,9 @@ func (w *Worker) ProcessTasks() {
 
 func (w *Worker) mandel(x float64, y float64) float64 {
 	// Calculate the iteration value
-	x1, y1, x2, y2, max := 0.0, 0.0, 0.0, 0.0, float64(w.Settings.MaxIterations)
+	x1, y1, x2, y2, max := 0.0, 0.0, 0.0, 0.0, float64(w.TaskSettings.MaxIterations)
 	iteration := 0.0
-	for (x2+y2) <= w.Settings.Boundary && iteration < max {
+	for (x2+y2) <= w.TaskSettings.Boundary && iteration < max {
 		y1 = 2*x1*y1 + y
 		x1 = x2 - y2 + x
 		x2 = x1 * x1
@@ -137,7 +180,7 @@ func (w *Worker) mandel(x float64, y float64) float64 {
 		iteration++
 	}
 
-	if w.Settings.SmoothColoring && iteration < max {
+	if w.TaskSettings.SmoothColoring && iteration < max {
 		// https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set
 		// Calculate the normalized iteration count when smooth coloring
 		zn := math.Log(x1*x1+y1*y1) / 2
@@ -153,10 +196,10 @@ func (w *Worker) determinePixelColor(row int, column int, magnification float64)
 	var finalColor color.RGBA
 
 	// Using grid super sampling
-	if w.Settings.SuperSampling > 1 {
+	if w.TaskSettings.SuperSampling > 1 {
 		subPixels = []float64{}
-		for i := 0; i < w.Settings.SuperSampling; i++ {
-			subPixels = append(subPixels, ((0.5+float64(i))/float64(w.Settings.SuperSampling))-0.5)
+		for i := 0; i < w.TaskSettings.SuperSampling; i++ {
+			subPixels = append(subPixels, ((0.5+float64(i))/float64(w.TaskSettings.SuperSampling))-0.5)
 		}
 	}
 
@@ -166,8 +209,8 @@ func (w *Worker) determinePixelColor(row int, column int, magnification float64)
 	for _, sx := range subPixels {
 		for _, sy := range subPixels {
 			// Convert the (column, row) point on the image to the (x, y) point in the imaginary axis
-			x := w.Settings.CenterX + ((float64(column)-float64(w.Settings.Width)/2)+sx)/(magnification*(float64(w.Settings.ShorterSide)-1))
-			y := w.Settings.CenterY + ((float64(row)-float64(w.Settings.Height)/2)-sy)/(magnification*(float64(w.Settings.ShorterSide)-1))
+			x := w.TaskSettings.CenterX + ((float64(column)-float64(w.TaskSettings.Width)/2)+sx)/(magnification*(float64(w.TaskSettings.ShorterSide)-1))
+			y := w.TaskSettings.CenterY + ((float64(row)-float64(w.TaskSettings.Height)/2)-sy)/(magnification*(float64(w.TaskSettings.ShorterSide)-1))
 			iteration = w.mandel(x, y)
 			colorSamples = append(colorSamples, w.GetColor(iteration))
 		}
@@ -177,20 +220,19 @@ func (w *Worker) determinePixelColor(row int, column int, magnification float64)
 	finalColor = colorSamples[0]
 
 	// Generate the final super sampled color
-	if w.Settings.SuperSampling > 1 {
-		var r, g, b, a int
+	if w.TaskSettings.SuperSampling > 1 {
+		var r, g, b int
 		for _, sample := range colorSamples {
 			r += int(sample.R)
 			g += int(sample.G)
 			b += int(sample.B)
-			a += int(sample.A)
 		}
 		divisor := len(colorSamples)
-		finalColor = color.RGBA{R: uint8(r / divisor), G: uint8(g / divisor), B: uint8(b / divisor), A: uint8(a / divisor)}
+		finalColor = color.RGBA{R: uint8(r / divisor), G: uint8(g / divisor), B: uint8(b / divisor), A: 255}
 	}
 
 	// Apply Smooth coloring if enabled
-	if int(math.Floor(iteration)) != w.Settings.MaxIterations && w.Settings.SmoothColoring {
+	if int(math.Floor(iteration)) != w.TaskSettings.MaxIterations && w.TaskSettings.SmoothColoring {
 		// The modf value is the floating point portion of the iteration value
 		_, fraction := math.Modf(iteration)
 
@@ -205,8 +247,8 @@ func (w *Worker) determinePixelColor(row int, column int, magnification float64)
 
 func (w *Worker) GetColor(iterations float64) color.RGBA {
 	intIterations := int(math.Floor(iterations))
-	if intIterations == w.Settings.MaxIterations {
-		return color.RGBA{R: 0, G: 0, B: 0, A: 255}
+	if intIterations == w.TaskSettings.MaxIterations {
+		return w.TaskSettings.EscapeColor
 	}
-	return w.Settings.Colors[intIterations%len(w.Settings.Colors)]
+	return w.TaskSettings.Palette[intIterations%len(w.TaskSettings.Palette)]
 }

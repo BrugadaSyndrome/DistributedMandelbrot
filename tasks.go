@@ -11,9 +11,10 @@ type TaskSettings struct {
 	Boundary       float64
 	CenterX        float64
 	CenterY        float64
-	Colors         []color.RGBA
+	EscapeColor    color.RGBA
 	Height         int
 	MaxIterations  int
+	Palette        []color.RGBA
 	SmoothColoring bool
 	ShorterSide    int
 	SuperSampling  int

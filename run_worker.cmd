@@ -1,1 +1,1 @@
-mandelbrot.exe -isWorker=true -workerCount=3
+mandelbrot.exe -mode=worker -settings=settings_worker.json

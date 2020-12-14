@@ -1,76 +1,24 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"net/rpc"
+	"os"
 )
 
 type Nothing struct{}
 
-func parseArguemnts() {
-	// Coordinator values
-	flag.BoolVar(&isCoordinator, "isCoordinator", false, "Is this instance the coordinator")
-	flag.Float64Var(&boundary, "boundary", 4.0, "Boundary escape value")
-	flag.Float64Var(&centerX, "centerX", -0.5, "Center x value of mandelbrot set")
-	flag.Float64Var(&centerY, "centerY", 0, "Center y value of mandelbrot set")
-	flag.IntVar(&height, "height", 1080, "Height of resulting image")
-	flag.Float64Var(&magnificationEnd, "magnificationEnd", 1.5, "End zoom level")
-	flag.Float64Var(&magnificationStart, "magnificationStart", 0.5, "Start zoom level")
-	flag.Float64Var(&magnificationStep, "magnificationStep", 1.0, "Number of frames")
-	flag.IntVar(&maxIterations, "maxIterations", 1000, "Iterations to run to verify each point")
-	flag.StringVar(&paletteFile, "paletteFile", "", "Json file with color palette")
-	flag.BoolVar(&smoothColoring, "smoothColoring", true, "Enable smooth coloring")
-	flag.IntVar(&superSampling, "superSampling", 1, "The level of aliasing to perform on the image")
-	flag.IntVar(&width, "width", 1920, "Width of resulting image")
-
-	// Worker values
-	flag.BoolVar(&isWorker, "isWorker", false, "Is this instance a worker")
-	flag.StringVar(&coordinatorAddress, "coordinatorAddress", fmt.Sprintf("%s:%s", getLocalAddress(), "10000"), "address of coordinator")
-	flag.IntVar(&workerCount, "workerCount", 2, "number of workers to create")
+func parseArguments() {
+	flag.StringVar(&mode, "mode", "", "Specify if this instance is a 'coordinator' or 'worker'")
+	flag.StringVar(&settingsFile, "settings", "", "Specify the file with the settings for this run")
 
 	flag.Parse()
-
-	if !isWorker && !isCoordinator {
-		log.Fatal("Please specify if this instance is the coordinator or a worker")
-	} else if isWorker {
-		log.Println()
-		log.Print("Workers got arguments:")
-		log.Printf("isWorker: %t\n", isWorker)
-		log.Printf("Coordniator Address: %s\n", coordinatorAddress)
-		log.Printf("WorkerCount: %d\n", workerCount)
-		log.Println()
-	} else if isCoordinator {
-		log.Println()
-		log.Print("Coordinator got arguments:")
-		log.Printf("isCoordinator: %t\n", isCoordinator)
-		log.Printf("Boundary: %f\n", boundary)
-		log.Printf("CenterX: %f\n", centerX)
-		log.Printf("CenterY: %f\n", centerY)
-		log.Printf("Height: %d\n", height)
-		log.Printf("Magnification End: %f\n", magnificationEnd)
-		log.Printf("Magnification Start: %f\n", magnificationStart)
-		log.Printf("Magnification Step: %f\n", magnificationStep)
-		log.Printf("Max Iterations: %d\n", maxIterations)
-		log.Printf("Palette File: %s\n", paletteFile)
-		log.Printf("Smooth Coloring: %t\n", smoothColoring)
-		log.Printf("Super Sampling: %d\n", superSampling)
-		log.Printf("Width: %d\n", width)
-		log.Println()
-
-		// Handle bad settings that can cause issues
-		if paletteFile == "" && smoothColoring == true {
-			smoothColoring = false
-			log.Print("No Color palette was supplied. Disabling smooth coloring.")
-		}
-		if superSampling < 1 {
-			superSampling = 1
-			log.Print("Setting superSampling to 1")
-		}
-	}
 }
 
 // https://github.com/golang/go/issues/13395
@@ -89,6 +37,7 @@ func newRPCServer(object interface{}, ipAddress string, port int) {
 	if err != nil {
 		log.Fatalf("Error creating RPC Server at address %s:%d with error: %v", ipAddress, port, err)
 	}
+	log.Printf("Created RPC Server at address %s:%d", ipAddress, port)
 
 	go http.Serve(l, mux)
 }
@@ -125,4 +74,21 @@ func getLocalAddress() string {
 	}
 
 	return localAddress
+}
+
+func readFile(fileName string) (error, []byte) {
+	if fileName == "" {
+		return errors.New("no filename supplied"), []byte{}
+	}
+
+	file, err := os.Open(fileName)
+	if err != nil {
+		return fmt.Errorf("unable to open %s - %s", fileName, err), []byte{}
+	}
+	fileBytes, err := ioutil.ReadAll(file)
+	if err != nil {
+		return fmt.Errorf("unable to read %s - %s", fileName, err), []byte{}
+	}
+
+	return nil, fileBytes
 }
