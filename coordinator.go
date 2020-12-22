@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -14,9 +15,11 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 /* CoordinatorSettings */
@@ -26,12 +29,14 @@ type CoordinatorSettings struct {
 	CenterY                 float64
 	EnableWebInterface      bool
 	EscapeColor             color.RGBA
+	GenerateMovie           bool
 	GeneratePaletteSettings []GeneratePaletteSettings
 	Height                  int
 	MagnificationEnd        float64
 	MagnificationStart      float64
 	MagnificationStep       float64
 	MaxIterations           int
+	RunName                 string
 	Palette                 []color.RGBA
 	SmoothColoring          bool
 	SuperSampling           int
@@ -57,7 +62,6 @@ func (cs *CoordinatorSettings) GeneratePalette(settings []GeneratePaletteSetting
 			cs.Palette = append(cs.Palette, colorStep)
 		}
 	}
-	log.Printf("%+v", cs.Palette)
 	return cs.Palette
 }
 
@@ -66,6 +70,7 @@ func (cs *CoordinatorSettings) String() string {
 	output += fmt.Sprintf("Boundary: %f\n", cs.Boundary)
 	output += fmt.Sprintf("CenterX: %f\n", cs.CenterX)
 	output += fmt.Sprintf("CenterY: %f\n", cs.CenterY)
+	output += fmt.Sprintf("Generate Movie: %t\n", cs.GenerateMovie)
 	output += fmt.Sprintf("Generate Palette Settings: %v\n", cs.GeneratePaletteSettings)
 	output += fmt.Sprintf("Height: %d\n", cs.Height)
 	output += fmt.Sprintf("Enable Web Interface: %t\n", cs.EnableWebInterface)
@@ -74,6 +79,7 @@ func (cs *CoordinatorSettings) String() string {
 	output += fmt.Sprintf("Magnification Start: %f\n", cs.MagnificationStart)
 	output += fmt.Sprintf("Magnification Step: %f\n", cs.MagnificationStep)
 	output += fmt.Sprintf("Max Iterations: %d\n", cs.MaxIterations)
+	output += fmt.Sprintf("Run Name: %s\n", cs.RunName)
 	output += fmt.Sprintf("Palette: %v\n", cs.Palette)
 	output += fmt.Sprintf("Smooth Coloring: %t\n", cs.SmoothColoring)
 	output += fmt.Sprintf("Super Sampling: %d\n", cs.SuperSampling)
@@ -95,11 +101,12 @@ func (cs *CoordinatorSettings) Verify() error {
 	if cs.EscapeColor == (color.RGBA{}) {
 		cs.EscapeColor = color.RGBA{R: 0, G: 0, B: 0, A: 255}
 	}
-	if len(cs.GeneratePaletteSettings) > 0 {
-		cs.Palette = cs.GeneratePalette(cs.GeneratePaletteSettings)
-	}
 	if cs.Height <= 0 {
 		cs.Height = 1080
+	}
+	// cs.GenerateMovie defaults to false already
+	if len(cs.GeneratePaletteSettings) > 0 {
+		cs.Palette = cs.GeneratePalette(cs.GeneratePaletteSettings)
 	}
 	if cs.MagnificationEnd <= 0 {
 		cs.MagnificationEnd = 1.5
@@ -112,6 +119,9 @@ func (cs *CoordinatorSettings) Verify() error {
 	}
 	if cs.MaxIterations <= 0 {
 		cs.MaxIterations = 1000
+	}
+	if cs.RunName == "" {
+		cs.RunName = "run_" + time.Now().Format("2006_01_02-03_04_05")
 	}
 	if len(cs.Palette) == 0 {
 		cs.Palette = []color.RGBA{{R: 255, G: 255, B: 255, A: 255}}
@@ -127,6 +137,18 @@ func (cs *CoordinatorSettings) Verify() error {
 	// Smooth coloring wont work with one color
 	if len(cs.Palette) == 1 && cs.SmoothColoring == true {
 		cs.SmoothColoring = false
+		log.Printf("INFO - Disabling SmoothColoring since the palette only has one color.")
+	}
+	// If generate movie is set to true, verify ffmpeg is setup
+	if cs.GenerateMovie {
+		cmd := exec.Command("ffmpeg")
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		cmd.Run()
+		if !bytes.Contains(stderr.Bytes(), []byte(`ffmpeg version`)) {
+			cs.GenerateMovie = false
+			log.Printf("INFO - Ffmpeg is not installed. Disabling GenerateMovie.")
+		}
 	}
 	return nil
 }
@@ -134,9 +156,11 @@ func (cs *CoordinatorSettings) Verify() error {
 /* Coordinator */
 type Coordinator struct {
 	ImageCount   int
-	ImageTasks   []*ImageTask
+	ImageTasks   map[int]*ImageTask
 	Logger       *log.Logger
 	Mutex        sync.Mutex
+	PixelCount   int
+	Rectangle    image.Rectangle
 	ShorterSide  int
 	Settings     *CoordinatorSettings
 	TaskCount    int
@@ -148,16 +172,11 @@ type Coordinator struct {
 }
 
 type ImageTask struct {
-	Completed  bool
 	Image      *image.RGBA
 	PixelsLeft int
 }
 
 func newCoordinator(settings CoordinatorSettings, ipAddress string, port int) Coordinator {
-	rect := image.Rectangle{
-		Min: image.Point{X: 0, Y: 0},
-		Max: image.Point{X: settings.Width, Y: settings.Height},
-	}
 	shorterSide := settings.Height
 	if settings.Width < settings.Height {
 		shorterSide = settings.Width
@@ -166,23 +185,20 @@ func newCoordinator(settings CoordinatorSettings, ipAddress string, port int) Co
 
 	coordinator := Coordinator{
 		ImageCount: imageCount,
-		ImageTasks: make([]*ImageTask, 0),
+		ImageTasks: make(map[int]*ImageTask),
 		Logger:     log.New(os.Stdout, fmt.Sprintf("Coordinator[%s:%d] ", ipAddress, port), log.Ldate|log.Ltime|log.Lshortfile),
-		Settings: &CoordinatorSettings{
-			Boundary:           settings.Boundary,
-			CenterX:            settings.CenterX,
-			CenterY:            settings.CenterY,
-			EscapeColor:        settings.EscapeColor,
-			Height:             settings.Height,
-			MagnificationEnd:   settings.MagnificationEnd,
-			MagnificationStart: settings.MagnificationStart,
-			MagnificationStep:  settings.MagnificationStep,
-			MaxIterations:      settings.MaxIterations,
-			Palette:            settings.Palette,
-			SmoothColoring:     settings.SmoothColoring,
-			SuperSampling:      settings.SuperSampling,
-			Width:              settings.Width,
+		PixelCount: settings.Height * settings.Width,
+		Rectangle: image.Rectangle{
+			Min: image.Point{
+				X: 0,
+				Y: 0,
+			},
+			Max: image.Point{
+				X: settings.Width,
+				Y: settings.Height,
+			},
 		},
+		Settings:    &settings,
 		ShorterSide: shorterSide,
 		TaskCount:   settings.Height * imageCount,
 		TasksDone:   make(chan LineTask, 1000),
@@ -202,16 +218,6 @@ func newCoordinator(settings CoordinatorSettings, ipAddress string, port int) Co
 		TasksTodo: make(chan LineTask, 1000),
 		Wait:      &sync.WaitGroup{},
 		Workers:   make(map[string]*rpc.Client, 0),
-	}
-
-	pixelCount := coordinator.Settings.Height * coordinator.Settings.Width
-	for c := 0; c < coordinator.ImageCount; c++ {
-		imageTask := &ImageTask{
-			Completed:  false,
-			Image:      image.NewRGBA(rect),
-			PixelsLeft: pixelCount,
-		}
-		coordinator.ImageTasks = append(coordinator.ImageTasks, imageTask)
 	}
 
 	newRPCServer(&coordinator, ipAddress, port)
@@ -239,11 +245,11 @@ func (c *Coordinator) callWorker(workerAddress string, method string, request in
 }
 
 func (c *Coordinator) GenerateTasks() {
-	c.Logger.Print("Generating tasks")
+	c.Logger.Printf("Generating %d tasks", c.TaskCount)
 
 	// for each picture to be generated
 	imageNumber := 0
-	for magnification := c.Settings.MagnificationStart; magnification < c.Settings.MagnificationEnd; magnification += c.Settings.MagnificationStep {
+	for magnification := c.Settings.MagnificationStart; magnification <= c.Settings.MagnificationEnd; magnification += c.Settings.MagnificationStep {
 
 		// for each pixel in this particular image
 		for row := 0; row < c.Settings.Height; row++ {

@@ -1,13 +1,9 @@
 {
     "Boundary": 1000,
-    "CenterX": -1.62917,
-    "CenterY": 0,
+    "CenterX": -1.189970964686263078212,
+    "CenterY": 0.304384693324585616334,
     "EnableWebInterface": false,
-    "Height": 2160,
-    "MagnificationStart": 25,
-    "MagnificationEnd": 26,
-    "MagnificationStep": 1,
-    "MaxIterations": 1000,
+    "GenerateMovie": true,
     "GeneratePaletteSettings": [
         {
             "StartColor": {
@@ -25,6 +21,11 @@
             "NumberColors": 50
         }
     ],
+    "Height": 2160,
+    "MagnificationStart": 1,
+    "MagnificationEnd": 10000,
+    "MagnificationStep": 1000,
+    "MaxIterations": 1000,
     "SmoothColoring": true,
     "SuperSampling": 4,
     "Width": 4096
