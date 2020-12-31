@@ -115,7 +115,7 @@ func (cs *CoordinatorSettings) Verify() error {
 		cs.MagnificationStart = 0.5
 	}
 	if cs.MagnificationStep <= 0 {
-		cs.MagnificationStep = 1
+		cs.MagnificationStep = 1.1
 	}
 	if cs.MaxIterations <= 0 {
 		cs.MaxIterations = 1000
@@ -181,7 +181,18 @@ func newCoordinator(settings CoordinatorSettings, ipAddress string, port int) Co
 	if settings.Width < settings.Height {
 		shorterSide = settings.Width
 	}
-	imageCount := int(math.Ceil((settings.MagnificationEnd - settings.MagnificationStart) / settings.MagnificationStep))
+
+	/*
+	 * Use logarithms to determine the number of images that will be generated using the specified magnification settings
+	 * This basically reverses the exponential zooming that happens in the first for loop of the Coordinator.GenerateTasks method
+	 *
+	 * i.e.
+	 * magnification_start + magnification_step^n = magnification_end
+	 * log(magnification_start) + n = log_magnification_step(magnification_end)
+	 * n = (log(magnification_end) / log(magnification_step)) - log(magnification_start)
+	 *
+	 */
+	imageCount := int(math.Ceil((math.Log(settings.MagnificationEnd) / math.Log(settings.MagnificationStep)) - math.Log(settings.MagnificationStart)))
 
 	coordinator := Coordinator{
 		ImageCount: imageCount,
@@ -233,12 +244,6 @@ func (c *Coordinator) callWorker(workerAddress string, method string, request in
 		return nil
 	}
 
-	// All work is done
-	if err.Error() == "all tasks handed out" {
-		c.Logger.Print("All tasks handed out")
-		return nil
-	}
-
 	c.Workers[workerAddress].Close()
 	c.Logger.Printf("ERROR - Failed to call worker at address: %s, method: %s, error: %v", workerAddress, method, err)
 	return err
@@ -247,11 +252,11 @@ func (c *Coordinator) callWorker(workerAddress string, method string, request in
 func (c *Coordinator) GenerateTasks() {
 	c.Logger.Printf("Generating %d tasks", c.TaskCount)
 
-	// for each picture to be generated
 	imageNumber := 0
-	for magnification := c.Settings.MagnificationStart; magnification <= c.Settings.MagnificationEnd; magnification += c.Settings.MagnificationStep {
+	// generate each image while zooming in exponentially
+	for magnification := c.Settings.MagnificationStart; magnification <= c.Settings.MagnificationEnd; magnification *= c.Settings.MagnificationStep {
 
-		// for each pixel in this particular image
+		// generate each task for at this magnification
 		for row := 0; row < c.Settings.Height; row++ {
 			task := LineTask{
 				currentWidth:  0,
@@ -281,7 +286,7 @@ func (c *Coordinator) RequestTask(request Nothing, reply *LineTask) error {
 	c.Mutex.Unlock()
 	if !more {
 		reply = nil
-		c.Logger.Print("All tasks handed out")
+		c.Logger.Print("Telling worker all tasks are handed out")
 		return errors.New("all tasks handed out")
 	}
 	*reply = task

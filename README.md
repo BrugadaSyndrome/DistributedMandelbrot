@@ -33,7 +33,7 @@ The coordinator mode settings json file has the following settings you can speci
 * Height (integer: 1080) - The height of the resulting image(s)
 * MagnificationEnd (float: 1.5) - The zoom level to end generating images at
 * MagnificationStart (float: 0.5) - The zoom level to start generating images at
-* MagnificationStep (float: 1.0) - The amount to zoom between each generated image
+* MagnificationStep (float: 1.1) - The amount to zoom between each generated image
 * MaxIterations (integer: 1000) - The iteration count that the mandel process should bail out at
 * Palette ([]color.RGBA) - Specify list of color.RGBA objects to be used as the color palette like so:
   ```[ {"R": 255, "G": 0, "B": 0, "A": 255}, {"R": 0, "G": 255, "B": 0, "A": 255} , {"R": 0, "G": 0, "B": 255, "A": 255} ].```

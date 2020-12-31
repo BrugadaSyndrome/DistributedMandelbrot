@@ -97,7 +97,7 @@ func (w *Worker) callCoordinator(method string, request interface{}, reply inter
 
 	// All work is done
 	if err.Error() == "all tasks handed out" {
-		w.Logger.Print("All tasks handed out")
+		w.Logger.Print("Coordinator says all tasks handed out")
 		return err
 	}
 

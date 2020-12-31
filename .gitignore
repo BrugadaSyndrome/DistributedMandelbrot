@@ -1,5 +1,5 @@
 *.exe
 /.idea
 /.vagrant
-/images
 mandelbrot
+run_*

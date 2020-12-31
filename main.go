@@ -16,17 +16,22 @@ import (
 
 /**
  * TODO
- * Web Interface
- * todo: figure out how it should work (settings, coordinator and worker tabs maybe)
+ * General
+ * todo: run some profiling tests to check for any bottle necks
+ * todo: do more research on finding interesting zoom points
  * Zoom
  * todo: improve zoom by allowing 'sliding' zooms from (x0, y0) => (x1, y1)
+ *       maybe even overhaul it like the GeneratePalette settings and have a GenerateZoom settings to allow for
+ *       simultaneous zooming and/or sliding if desired. Might be cool idk.
+ * Color
+ * todo: Add in other color interpolation options (HSV, HSL, LAB, ...)
+ * todo: Look into allowing the use of the exterior distance estimation technique
+ * Web Interface
+ * todo: figure out how it should work (settings, coordinator and worker tabs maybe)
  * Cache iteration results in db
  * todo: get distributed mandelbrot working inside of a multi-machine vagrant instance
  *     : including firewall stuff (avoid private network options because that wont be available normally)
  * todo: stashing results in mysql db
- * Color
- * todo: Add in other color interpolation options (HSV, HSL, LAB, ...)
- * todo: Look into allowing the use of the exterior distance estimation technique
  */
 
 var (
@@ -122,13 +127,12 @@ func startCoordinatorMode(settingsFile string) {
 				err = jpeg.Encode(f, imageTask.Image, nil)
 				if err != nil {
 					coordinator.Logger.Fatalf("ERROR - Unable to save image: %s", err)
-				} else {
-					// Remove the image to conserve memory
-					coordinator.Mutex.Lock()
-					delete(coordinator.ImageTasks, task.ImageNumber)
-					coordinator.Mutex.Unlock()
-					coordinator.Logger.Printf("Saved image to ./%s [completed images: %d/%d] [completed tasks: %d/%d]", path, task.ImageNumber+1, coordinator.ImageCount, c, coordinator.TaskCount)
 				}
+				// Remove the image to conserve memory
+				coordinator.Mutex.Lock()
+				delete(coordinator.ImageTasks, task.ImageNumber)
+				coordinator.Mutex.Unlock()
+				coordinator.Logger.Printf("Saved image to ./%s [completed images: %d/%d] [completed tasks: %d/%d]", path, task.ImageNumber+1, coordinator.ImageCount, c, coordinator.TaskCount)
 			}
 		}
 	}
@@ -153,7 +157,7 @@ func startCoordinatorMode(settingsFile string) {
 		if err != nil {
 			coordinator.Logger.Fatalf("ERROR - Unable to make movie: %v\n%s\n", err, stderr.String())
 		}
-		coordinator.Logger.Print("Done making movie:\n")
+		coordinator.Logger.Print("Done making movie\n")
 	}
 
 	// Nothing like a job well done
