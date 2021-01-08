@@ -114,7 +114,7 @@ func (cs *CoordinatorSettings) Verify() error {
 	if cs.MagnificationStart <= 0 {
 		cs.MagnificationStart = 0.5
 	}
-	if cs.MagnificationStep <= 0 {
+	if cs.MagnificationStep <= 1 {
 		cs.MagnificationStep = 1.1
 	}
 	if cs.MaxIterations <= 0 {
@@ -134,6 +134,13 @@ func (cs *CoordinatorSettings) Verify() error {
 		cs.Width = 1920
 	}
 
+	// Magnification start must be greater than magnification end
+	if cs.MagnificationEnd < cs.MagnificationStart {
+		temp := cs.MagnificationStart
+		cs.MagnificationStart = cs.MagnificationEnd
+		cs.MagnificationEnd = temp
+		log.Printf("INFO - MagnificationEnd is less than MagnficationStart. Switching the two values.")
+	}
 	// Smooth coloring wont work with one color
 	if len(cs.Palette) == 1 && cs.SmoothColoring == true {
 		cs.SmoothColoring = false

@@ -17,15 +17,11 @@ import (
 /**
  * TODO
  * General
- * todo: run some profiling tests to check for any bottle necks
  * todo: do more research on finding interesting zoom points
  * Zoom
  * todo: improve zoom by allowing 'sliding' zooms from (x0, y0) => (x1, y1)
  *       maybe even overhaul it like the GeneratePalette settings and have a GenerateZoom settings to allow for
  *       simultaneous zooming and/or sliding if desired. Might be cool idk.
- * Color
- * todo: Add in other color interpolation options (HSV, HSL, LAB, ...)
- * todo: Look into allowing the use of the exterior distance estimation technique
  * Web Interface
  * todo: figure out how it should work (settings, coordinator and worker tabs maybe)
  * Cache iteration results in db
@@ -56,10 +52,12 @@ func main() {
 
 func startCoordinatorMode(settingsFile string) {
 	var settings CoordinatorSettings
+	var fileBytes []byte
+	var err error
 
 	// Read in settings
 	if settingsFile != "" {
-		err, fileBytes := readFile(settingsFile)
+		err, fileBytes = readFile(settingsFile)
 		if err != nil {
 			log.Fatal(err.Error())
 		}
@@ -68,7 +66,9 @@ func startCoordinatorMode(settingsFile string) {
 			log.Fatalf("ERROR - Unable to unmarshal %s - %s", settingsFile, err)
 		}
 	}
-	err := settings.Verify()
+
+	// Verify (and fix) any settings that have been passed in
+	err = settings.Verify()
 	if err != nil {
 		log.Fatalf("ERROR - Unable to use settings - %s", err)
 	}
@@ -83,6 +83,12 @@ func startCoordinatorMode(settingsFile string) {
 		if err != nil {
 			coordinator.Logger.Fatalf("ERROR - unable to create folder: %s", err)
 		}
+	}
+
+	// Save settings to the directory as a backup
+	bytesWritten, err := writeFile(fmt.Sprintf("%s\\%s", coordinator.Settings.RunName, settingsFile), fileBytes)
+	if err != nil || bytesWritten == 0 {
+		coordinator.Logger.Printf("INFO - was not able to make a backup copy of settingsFile: %s", settingsFile)
 	}
 
 	// todo: if web interface is being used then dont start generating tasks yet
