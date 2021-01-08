@@ -55,6 +55,7 @@ type Worker struct {
 	Client             *rpc.Client
 	MyAddress          string
 	Logger             *log.Logger
+	MathLog2           float64
 	Port               int
 	TaskSettings       TaskSettings
 	Wait               *sync.WaitGroup
@@ -67,6 +68,7 @@ func newWorker(settings WorkerSettings, portOffset int, wg *sync.WaitGroup) Work
 		CoordinatorAddress: fmt.Sprintf("%s:%d", settings.CoordinatorAddress, settings.CoordinatorPort),
 		MyAddress:          settings.WorkerAddress,
 		Logger:             log.New(os.Stdout, fmt.Sprintf("Worker[%s:%d] ", settings.WorkerAddress, port), log.Ldate|log.Ltime|log.Lshortfile),
+		MathLog2:           math.Log(2),
 		Port:               port,
 		Wait:               wg,
 	}
@@ -184,7 +186,7 @@ func (w *Worker) mandel(x float64, y float64) float64 {
 		// https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set
 		// Calculate the normalized iteration count when smooth coloring
 		zn := math.Log(x1*x1+y1*y1) / 2
-		nu := math.Log(zn/math.Log(2)) / math.Log(2)
+		nu := math.Log(zn/w.MathLog2) / w.MathLog2
 		iteration = iteration + 1 - nu
 	}
 
@@ -192,27 +194,29 @@ func (w *Worker) mandel(x float64, y float64) float64 {
 }
 
 func (w *Worker) determinePixelColor(row int, column int, magnification float64) color.RGBA {
-	subPixels := []float64{0}
+	subPixels := make([]float64, w.TaskSettings.SuperSampling)
+	subPixels[0] = 0
 	var finalColor color.RGBA
 
 	// Using grid super sampling
 	if w.TaskSettings.SuperSampling > 1 {
-		subPixels = []float64{}
 		for i := 0; i < w.TaskSettings.SuperSampling; i++ {
-			subPixels = append(subPixels, ((0.5+float64(i))/float64(w.TaskSettings.SuperSampling))-0.5)
+			subPixels[i] = ((0.5 + float64(i)) / float64(w.TaskSettings.SuperSampling)) - 0.5
 		}
 	}
 
 	// Collect each sample
-	var colorSamples []color.RGBA
+	colorSamples := make([]color.RGBA, w.TaskSettings.SuperSampling*w.TaskSettings.SuperSampling)
 	var iteration float64
+	index := 0
 	for _, sx := range subPixels {
 		for _, sy := range subPixels {
 			// Convert the (column, row) point on the image to the (x, y) point in the imaginary axis
 			x := w.TaskSettings.CenterX + ((float64(column)-float64(w.TaskSettings.Width)/2)+sx)/(magnification*(float64(w.TaskSettings.ShorterSide)-1))
 			y := w.TaskSettings.CenterY + ((float64(row)-float64(w.TaskSettings.Height)/2)-sy)/(magnification*(float64(w.TaskSettings.ShorterSide)-1))
 			iteration = w.mandel(x, y)
-			colorSamples = append(colorSamples, w.GetColor(iteration))
+			colorSamples[index] = w.GetColor(iteration)
+			index++
 		}
 	}
 
