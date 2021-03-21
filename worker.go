@@ -144,12 +144,12 @@ func (w *Worker) ProcessTasks() {
 
 		// Calculate escape value
 		for {
-			row, column, magnification := task.NextTask()
-			if row == -1 && column == -1 && magnification == -1 {
+			row, column, magnification, centerX, centerY := task.NextTask()
+			if row == -1 && column == -1 && magnification == -1 && centerX == -1 && centerY == -1 {
 				break
 			}
 
-			task.RecordColor(w.determinePixelColor(row, column, magnification))
+			task.RecordColor(w.determinePixelColor(centerX, centerY, row, column, magnification))
 		}
 
 		// Return result to master
@@ -193,7 +193,7 @@ func (w *Worker) mandel(x float64, y float64) float64 {
 	return iteration
 }
 
-func (w *Worker) determinePixelColor(row int, column int, magnification float64) color.RGBA {
+func (w *Worker) determinePixelColor(centerX float64, centerY float64, row int, column int, magnification float64) color.RGBA {
 	subPixels := make([]float64, w.TaskSettings.SuperSampling)
 	subPixels[0] = 0
 	var finalColor color.RGBA
@@ -211,9 +211,9 @@ func (w *Worker) determinePixelColor(row int, column int, magnification float64)
 	index := 0
 	for _, sx := range subPixels {
 		for _, sy := range subPixels {
-			// Convert the (column, row) point on the image to the (x, y) point in the imaginary axis
-			x := w.TaskSettings.CenterX + ((float64(column)-float64(w.TaskSettings.Width)/2)+sx)/(magnification*(float64(w.TaskSettings.ShorterSide)-1))
-			y := w.TaskSettings.CenterY + ((float64(row)-float64(w.TaskSettings.Height)/2)-sy)/(magnification*(float64(w.TaskSettings.ShorterSide)-1))
+			// Convert the (column, row) point on the image to the (x, y) point on the complex axis
+			x := centerX + ((float64(column)-float64(w.TaskSettings.Width)/2)+sx)/(magnification*(float64(w.TaskSettings.ShorterSide)-1))
+			y := centerY + ((float64(row)-float64(w.TaskSettings.Height)/2)-sy)/(magnification*(float64(w.TaskSettings.ShorterSide)-1))
 			iteration = w.mandel(x, y)
 			colorSamples[index] = w.GetColor(iteration)
 			index++

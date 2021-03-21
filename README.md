@@ -21,8 +21,6 @@ another instance is started in worker mode.**
 The coordinator mode settings json file has the following settings you can specify:
 
 * Boundary (integer: 100) - The escape boundary that the mandel process should bail out at
-* CenterX (integer: 0) - The x part of the coordinate to center the image(s) on
-* CenterY (integer: 0) - The y part of the coordinate to center the image(s) on
 * EnableWebInterface (bool: false) - **WIP Feature**.
 * EscapeColor (color.RGBA) - Specify the color to fill in the points in the Mandelbrot set
 * GeneratePaletteSettings ([]GeneratePaletteSettings) - Specify list of GeneratePaletteSettings objects (see
@@ -31,9 +29,6 @@ The coordinator mode settings json file has the following settings you can speci
   ```[ { "StartColor": {"R": 255, "G": 0, "B": 0, "A": 255}, "EndColor": {"R": 0, "G": 255, "B": 255, "A": 255}, "NumberColors": 50 } ]```
   **When this setting is specified, then the Palette option will be ignored.**
 * Height (integer: 1080) - The height of the resulting image(s)
-* MagnificationEnd (float: 1.5) - The zoom level to end generating images at
-* MagnificationStart (float: 0.5) - The zoom level to start generating images at
-* MagnificationStep (float: 1.1) - The amount to zoom between each generated image
 * MaxIterations (integer: 1000) - The iteration count that the mandel process should bail out at
 * Palette ([]color.RGBA) - Specify list of color.RGBA objects to be used as the color palette like so:
   ```[ {"R": 255, "G": 0, "B": 0, "A": 255}, {"R": 0, "G": 255, "B": 0, "A": 255} , {"R": 0, "G": 0, "B": 255, "A": 255} ].```
@@ -42,6 +37,9 @@ The coordinator mode settings json file has the following settings you can speci
   color in the palette to use this feature.**
 * SuperSampling (int: 1) - The amount of super sampling (anti-aliasing) to use. Setting this to 1 means no AA.
   **Using this feature will increase each task workload exponentially.**
+* TransitionSettings ([]TransitionSettings) - Specify a list of TransitionSettings objects (see coordinator.go file) to
+  use in generating how the zooming in will be calculated. Example:
+  ```[ {"StartX": -0.75, "StartY": 0, "EndX": -0.761574, "EndY": -0.0847596, "MagnificationStart": 1, "MagnificationEnd": 78125, "MagnificationStep": 2 } ]```
 * Width (integer: 1920) - The width of the resulting image(s)
 
 ### Worker Mode Settings

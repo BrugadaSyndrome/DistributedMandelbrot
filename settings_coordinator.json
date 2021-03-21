@@ -1,9 +1,7 @@
 {
     "Boundary": 1000,
-    "CenterX": -1.189970964686263078212,
-    "CenterY": 0.304384693324585616334,
     "EnableWebInterface": false,
-    "GenerateMovie": true,
+    "GenerateMovie": false,
     "GeneratePaletteSettings": [
         {
             "StartColor": {
@@ -21,12 +19,20 @@
             "NumberColors": 50
         }
     ],
-    "Height": 2160,
-    "MagnificationStart": 1,
-    "MagnificationEnd": 1000,
-    "MagnificationStep": 1.1,
+    "Height": 1080,
     "MaxIterations": 1000,
-    "SmoothColoring": true,
-    "SuperSampling": 4,
-    "Width": 4096
+    "SmoothColoring": false,
+    "SuperSampling": 2,
+    "TransitionSettings": [
+        {
+            "StartX": -0.761574,
+            "StartY": -0.0847596,
+            "EndX": -0.761574,
+            "EndY": -0.0847596,
+            "MagnificationStart": 1,
+            "MagnificationEnd": 78125,
+            "MagnificationStep": 1.02
+        }
+    ],
+    "Width": 1920
 }

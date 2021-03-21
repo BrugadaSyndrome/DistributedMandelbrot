@@ -40,6 +40,7 @@ type CoordinatorSettings struct {
 	Palette                 []color.RGBA
 	SmoothColoring          bool
 	SuperSampling           int
+	TransitionSettings      []TransitionSettings
 	Width                   int
 }
 
@@ -49,15 +50,25 @@ type GeneratePaletteSettings struct {
 	NumberColors int
 }
 
+type TransitionSettings struct {
+	StartX             float64
+	StartY             float64
+	EndX               float64
+	EndY               float64
+	MagnificationStart float64
+	MagnificationEnd   float64
+	MagnificationStep  float64
+}
+
 func (cs *CoordinatorSettings) GeneratePalette(settings []GeneratePaletteSettings) []color.RGBA {
 	cs.Palette = make([]color.RGBA, 0)
 	for i := 0; i < len(settings); i++ {
 		for j := 0; j < settings[i].NumberColors; j++ {
 			fraction := float64(j) / float64(settings[i].NumberColors)
 			colorStep := color.RGBA{
-				R: interpolateUint8(settings[i].StartColor.R, settings[i].EndColor.R, fraction),
-				G: interpolateUint8(settings[i].StartColor.G, settings[i].EndColor.G, fraction),
-				B: interpolateUint8(settings[i].StartColor.B, settings[i].EndColor.B, fraction),
+				R: lerpUint8(settings[i].StartColor.R, settings[i].EndColor.R, fraction),
+				G: lerpUint8(settings[i].StartColor.G, settings[i].EndColor.G, fraction),
+				B: lerpUint8(settings[i].StartColor.B, settings[i].EndColor.B, fraction),
 				A: 255}
 			cs.Palette = append(cs.Palette, colorStep)
 		}
@@ -83,6 +94,7 @@ func (cs *CoordinatorSettings) String() string {
 	output += fmt.Sprintf("Palette: %v\n", cs.Palette)
 	output += fmt.Sprintf("Smooth Coloring: %t\n", cs.SmoothColoring)
 	output += fmt.Sprintf("Super Sampling: %d\n", cs.SuperSampling)
+	output += fmt.Sprintf("Transition Settings: %v\n", cs.TransitionSettings)
 	output += fmt.Sprintf("Width: %d\n", cs.Width)
 	return output
 }
@@ -90,12 +102,6 @@ func (cs *CoordinatorSettings) String() string {
 func (cs *CoordinatorSettings) Verify() error {
 	if cs.Boundary <= 0 {
 		cs.Boundary = 100
-	}
-	if cs.CenterX < -4 || cs.CenterX > 4 {
-		cs.CenterX = 0
-	}
-	if cs.CenterY < -4 || cs.CenterX > 4 {
-		cs.CenterY = 0
 	}
 	// cs.EnableWebInterface defaults to false already
 	if cs.EscapeColor == (color.RGBA{}) {
@@ -107,15 +113,6 @@ func (cs *CoordinatorSettings) Verify() error {
 	// cs.GenerateMovie defaults to false already
 	if len(cs.GeneratePaletteSettings) > 0 {
 		cs.Palette = cs.GeneratePalette(cs.GeneratePaletteSettings)
-	}
-	if cs.MagnificationEnd <= 0 {
-		cs.MagnificationEnd = 1.5
-	}
-	if cs.MagnificationStart <= 0 {
-		cs.MagnificationStart = 0.5
-	}
-	if cs.MagnificationStep <= 1 {
-		cs.MagnificationStep = 1.1
 	}
 	if cs.MaxIterations <= 0 {
 		cs.MaxIterations = 1000
@@ -129,6 +126,34 @@ func (cs *CoordinatorSettings) Verify() error {
 	// cs.SmoothColoring defaults to false already
 	if cs.SuperSampling < 1 {
 		cs.SuperSampling = 1
+	}
+	if len(cs.TransitionSettings) == 0 {
+		cs.TransitionSettings = []TransitionSettings{
+			{},
+		}
+	}
+	for i := 0; i < len(cs.TransitionSettings); i++ {
+		if cs.TransitionSettings[i].StartX < -4 || cs.TransitionSettings[i].StartX > 4 {
+			cs.TransitionSettings[i].StartX = 0
+		}
+		if cs.TransitionSettings[i].StartY < -4 || cs.TransitionSettings[i].StartY > 4 {
+			cs.TransitionSettings[i].StartY = 0
+		}
+		if cs.TransitionSettings[i].EndX < -4 || cs.TransitionSettings[i].EndX > 4 {
+			cs.TransitionSettings[i].EndX = 0
+		}
+		if cs.TransitionSettings[i].EndY < -4 || cs.TransitionSettings[i].EndY > 4 {
+			cs.TransitionSettings[i].EndY = 0
+		}
+		if cs.TransitionSettings[i].MagnificationEnd <= 0 {
+			cs.TransitionSettings[i].MagnificationEnd = 1.5
+		}
+		if cs.TransitionSettings[i].MagnificationStart <= 0 {
+			cs.TransitionSettings[i].MagnificationStart = 0.5
+		}
+		if cs.TransitionSettings[i].MagnificationStep <= 1 {
+			cs.TransitionSettings[i].MagnificationStep = 1.1
+		}
 	}
 	if cs.Width <= 0 {
 		cs.Width = 1920
@@ -199,7 +224,10 @@ func newCoordinator(settings CoordinatorSettings, ipAddress string, port int) Co
 	 * n = (log(magnification_end) / log(magnification_step)) - log(magnification_start)
 	 *
 	 */
-	imageCount := int(math.Ceil((math.Log(settings.MagnificationEnd) / math.Log(settings.MagnificationStep)) - math.Log(settings.MagnificationStart)))
+	imageCount := 0
+	for i := 0; i < len(settings.TransitionSettings); i++ {
+		imageCount += int(math.Ceil((math.Log(settings.TransitionSettings[i].MagnificationEnd) / math.Log(settings.TransitionSettings[i].MagnificationStep)) - math.Log(settings.TransitionSettings[i].MagnificationStart)))
+	}
 
 	coordinator := Coordinator{
 		ImageCount: imageCount,
@@ -221,17 +249,18 @@ func newCoordinator(settings CoordinatorSettings, ipAddress string, port int) Co
 		TaskCount:   settings.Height * imageCount,
 		TasksDone:   make(chan LineTask, 1000),
 		TaskSettings: &TaskSettings{
-			Boundary:       settings.Boundary,
-			CenterX:        settings.CenterX,
-			CenterY:        settings.CenterY,
-			EscapeColor:    settings.EscapeColor,
-			Height:         settings.Height,
-			MaxIterations:  settings.MaxIterations,
-			Palette:        settings.Palette,
-			SmoothColoring: settings.SmoothColoring,
-			ShorterSide:    shorterSide,
-			SuperSampling:  settings.SuperSampling,
-			Width:          settings.Width,
+			Boundary:           settings.Boundary,
+			CenterX:            settings.CenterX,
+			CenterY:            settings.CenterY,
+			EscapeColor:        settings.EscapeColor,
+			Height:             settings.Height,
+			MaxIterations:      settings.MaxIterations,
+			Palette:            settings.Palette,
+			SmoothColoring:     settings.SmoothColoring,
+			ShorterSide:        shorterSide,
+			SuperSampling:      settings.SuperSampling,
+			TransitionSettings: settings.TransitionSettings,
+			Width:              settings.Width,
 		},
 		TasksTodo: make(chan LineTask, 1000),
 		Wait:      &sync.WaitGroup{},
@@ -260,30 +289,41 @@ func (c *Coordinator) GenerateTasks() {
 	c.Logger.Printf("Generating %d tasks", c.TaskCount)
 
 	imageNumber := 0
-	// generate each image while zooming in exponentially
-	for magnification := c.Settings.MagnificationStart; magnification <= c.Settings.MagnificationEnd; magnification *= c.Settings.MagnificationStep {
+	// work through each transition
+	for transitionStep := 0; transitionStep < len(c.Settings.TransitionSettings); transitionStep++ {
+		// generate each image for this transition while zooming in exponentially
+		transition := c.Settings.TransitionSettings[transitionStep]
+		currentFrame := 1.0
+		FrameCount := math.Ceil((math.Log(transition.MagnificationEnd) / math.Log(transition.MagnificationStep)) - math.Log(transition.MagnificationStart))
+		currentX := transition.StartX
+		currentY := transition.StartY
+		for magnification := transition.MagnificationStart; magnification <= transition.MagnificationEnd; magnification *= transition.MagnificationStep {
+			// generate each task for this image at this magnification
+			for row := 0; row < c.Settings.Height; row++ {
+				task := LineTask{
+					CenterX:       currentX,
+					CenterY:       currentY,
+					CurrentWidth:  0,
+					ImageNumber:   imageNumber,
+					Colors:        make([]color.RGBA, 0),
+					Magnification: magnification,
+					Row:           row,
+					Width:         c.Settings.Width,
+				}
 
-		// generate each task for at this magnification
-		for row := 0; row < c.Settings.Height; row++ {
-			task := LineTask{
-				currentWidth:  0,
-				ImageNumber:   imageNumber,
-				Colors:        make([]color.RGBA, 0),
-				Magnification: magnification,
-				Row:           row,
-				Width:         c.Settings.Width,
+				c.Mutex.Lock()
+				c.TasksTodo <- task
+				c.Mutex.Unlock()
 			}
 
-			c.Mutex.Lock()
-			c.TasksTodo <- task
-			c.Mutex.Unlock()
+			currentFrame++
+			t := currentFrame / FrameCount
+			currentX = lerpFloat64(transition.StartX, transition.EndX, easeOutExpo(t))
+			currentY = lerpFloat64(transition.StartY, transition.EndY, easeOutExpo(t))
+			imageNumber++
 		}
-
-		imageNumber++
+		close(c.TasksTodo)
 	}
-	close(c.TasksTodo)
-
-	c.Logger.Printf("Done generating %d tasks", c.TaskCount)
 }
 
 /* RPC */
@@ -323,6 +363,7 @@ func (c *Coordinator) GetTaskSettings(request Nothing, reply *TaskSettings) erro
 	reply.ShorterSide = c.ShorterSide
 	reply.SmoothColoring = c.Settings.SmoothColoring
 	reply.SuperSampling = c.Settings.SuperSampling
+	reply.TransitionSettings = c.Settings.TransitionSettings
 	reply.Width = c.Settings.Width
 	c.Mutex.Unlock()
 	return nil

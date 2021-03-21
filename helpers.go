@@ -121,3 +121,21 @@ func writeFile(fileName string, contents []byte) (int, error) {
 
 	return bytesWritten, nil
 }
+
+func lerpFloat64(v1 float64, v2 float64, fraction float64) float64 {
+	return v1 + (v2-v1)*fraction
+}
+
+func lerpUint8(v1 uint8, v2 uint8, fraction float64) uint8 {
+	v1f := float64(v1)
+	v2f := float64(v2)
+	return uint8(lerpFloat64(v1f, v2f, fraction))
+}
+
+func easeFlip(t float64) float64 {
+	return 1 - t
+}
+
+func easeOutExpo(t float64) float64 {
+	return easeFlip(easeFlip(t) * easeFlip(t))
+}

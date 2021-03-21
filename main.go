@@ -17,17 +17,17 @@ import (
 /**
  * TODO
  * General
- * todo: do more research on finding interesting zoom points
- * Zoom
- * todo: improve zoom by allowing 'sliding' zooms from (x0, y0) => (x1, y1)
- *       maybe even overhaul it like the GeneratePalette settings and have a GenerateZoom settings to allow for
- *       simultaneous zooming and/or sliding if desired. Might be cool idk.
+ * todo: have a 'heartbeat' function for the coordinator and workers that spit out progress periodically
+ * todo: ways to find interesting zoom points
  * Web Interface
  * todo: figure out how it should work (settings, coordinator and worker tabs maybe)
  * Cache iteration results in db
  * todo: get distributed mandelbrot working inside of a multi-machine vagrant instance
  *     : including firewall stuff (avoid private network options because that wont be available normally)
  * todo: stashing results in mysql db
+ * GPU
+ * todo: see how hard it would be to use GPUs
+ * todo: if feasible, add option to use GPUs, CPUs or even both at the same time if possible
  */
 
 var (

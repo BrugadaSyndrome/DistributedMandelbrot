@@ -8,21 +8,24 @@ type Task interface {
 }
 
 type TaskSettings struct {
-	Boundary       float64
-	CenterX        float64
-	CenterY        float64
-	EscapeColor    color.RGBA
-	Height         int
-	MaxIterations  int
-	Palette        []color.RGBA
-	SmoothColoring bool
-	ShorterSide    int
-	SuperSampling  int
-	Width          int
+	Boundary           float64
+	CenterX            float64
+	CenterY            float64
+	EscapeColor        color.RGBA
+	Height             int
+	MaxIterations      int
+	Palette            []color.RGBA
+	SmoothColoring     bool
+	ShorterSide        int
+	SuperSampling      int
+	TransitionSettings []TransitionSettings
+	Width              int
 }
 
 type LineTask struct {
-	currentWidth  int // current width value calculating
+	CenterX       float64
+	CenterY       float64
+	CurrentWidth  int // current width value calculating
 	ImageNumber   int
 	Colors        []color.RGBA
 	Magnification float64
@@ -30,14 +33,14 @@ type LineTask struct {
 	Width         int // assumes 0 - width for column values
 }
 
-func (lt *LineTask) NextTask() (int, int, float64) {
+func (lt *LineTask) NextTask() (int, int, float64, float64, float64) {
 	if len(lt.Colors) < lt.Width {
-		return lt.Row, lt.currentWidth, lt.Magnification
+		return lt.Row, lt.CurrentWidth, lt.Magnification, lt.CenterX, lt.CenterY
 	}
-	return -1, -1, -1
+	return -1, -1, -1, -1, -1
 }
 
 func (lt *LineTask) RecordColor(color color.RGBA) {
 	lt.Colors = append(lt.Colors, color)
-	lt.currentWidth++
+	lt.CurrentWidth++
 }
