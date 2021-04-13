@@ -1,7 +1,6 @@
 {
     "Boundary": 1000,
-    "EnableWebInterface": false,
-    "GenerateMovie": false,
+    "GenerateMovie": true,
     "GeneratePaletteSettings": [
         {
             "StartColor": {
@@ -11,9 +10,39 @@
                 "A": 255
             },
             "EndColor": {
-                "R": 0,
+                "R": 255,
+                "G": 128,
+                "B": 0,
+                "A": 255
+            },
+            "NumberColors": 50
+        },
+        {
+            "StartColor": {
+                "R": 255,
+                "G": 255,
+                "B": 128,
+                "A": 255
+            },
+            "EndColor": {
+                "R": 255,
                 "G": 255,
                 "B": 255,
+                "A": 255
+            },
+            "NumberColors": 25
+        },
+        {
+            "StartColor": {
+                "R": 255,
+                "G": 255,
+                "B": 255,
+                "A": 255
+            },
+            "EndColor": {
+                "R": 255,
+                "G": 0,
+                "B": 0,
                 "A": 255
             },
             "NumberColors": 50
@@ -22,15 +51,24 @@
     "Height": 1080,
     "MaxIterations": 1000,
     "SmoothColoring": false,
-    "SuperSampling": 2,
+    "SuperSampling": 1,
     "TransitionSettings": [
         {
-            "StartX": -0.761574,
-            "StartY": -0.0847596,
+            "StartX": -0.75,
+            "StartY": 0.0,
             "EndX": -0.761574,
             "EndY": -0.0847596,
             "MagnificationStart": 1,
-            "MagnificationEnd": 78125,
+            "MagnificationEnd": 250,
+            "MagnificationStep": 1.02
+        },
+        {
+            "StartX": -0.761574,
+            "StartY": -0.0847596,
+            "EndX": -0.75,
+            "EndY": 0.0,
+            "MagnificationStart": 250,
+            "MagnificationEnd": 1,
             "MagnificationStep": 1.02
         }
     ],

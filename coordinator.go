@@ -2,22 +2,16 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
-	"html/template"
 	"image"
 	"image/color"
-	"io/ioutil"
+	"image/jpeg"
 	"log"
 	"math"
-	"net/http"
 	"net/rpc"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 )
@@ -25,16 +19,11 @@ import (
 /* CoordinatorSettings */
 type CoordinatorSettings struct {
 	Boundary                float64
-	CenterX                 float64
-	CenterY                 float64
 	EnableWebInterface      bool
 	EscapeColor             color.RGBA
 	GenerateMovie           bool
 	GeneratePaletteSettings []GeneratePaletteSettings
 	Height                  int
-	MagnificationEnd        float64
-	MagnificationStart      float64
-	MagnificationStep       float64
 	MaxIterations           int
 	RunName                 string
 	Palette                 []color.RGBA
@@ -51,13 +40,14 @@ type GeneratePaletteSettings struct {
 }
 
 type TransitionSettings struct {
-	StartX             float64
-	StartY             float64
 	EndX               float64
 	EndY               float64
+	FrameCount         int
 	MagnificationStart float64
 	MagnificationEnd   float64
 	MagnificationStep  float64
+	StartX             float64
+	StartY             float64
 }
 
 func (cs *CoordinatorSettings) GeneratePalette(settings []GeneratePaletteSettings) []color.RGBA {
@@ -79,16 +69,11 @@ func (cs *CoordinatorSettings) GeneratePalette(settings []GeneratePaletteSetting
 func (cs *CoordinatorSettings) String() string {
 	output := "\nCoordinator settings are: \n"
 	output += fmt.Sprintf("Boundary: %f\n", cs.Boundary)
-	output += fmt.Sprintf("CenterX: %f\n", cs.CenterX)
-	output += fmt.Sprintf("CenterY: %f\n", cs.CenterY)
 	output += fmt.Sprintf("Generate Movie: %t\n", cs.GenerateMovie)
 	output += fmt.Sprintf("Generate Palette Settings: %v\n", cs.GeneratePaletteSettings)
 	output += fmt.Sprintf("Height: %d\n", cs.Height)
 	output += fmt.Sprintf("Enable Web Interface: %t\n", cs.EnableWebInterface)
 	output += fmt.Sprintf("Escape Color: %v\n", cs.EscapeColor)
-	output += fmt.Sprintf("Magnification End: %f\n", cs.MagnificationEnd)
-	output += fmt.Sprintf("Magnification Start: %f\n", cs.MagnificationStart)
-	output += fmt.Sprintf("Magnification Step: %f\n", cs.MagnificationStep)
 	output += fmt.Sprintf("Max Iterations: %d\n", cs.MaxIterations)
 	output += fmt.Sprintf("Run Name: %s\n", cs.RunName)
 	output += fmt.Sprintf("Palette: %v\n", cs.Palette)
@@ -159,13 +144,6 @@ func (cs *CoordinatorSettings) Verify() error {
 		cs.Width = 1920
 	}
 
-	// Magnification start must be greater than magnification end
-	if cs.MagnificationEnd < cs.MagnificationStart {
-		temp := cs.MagnificationStart
-		cs.MagnificationStart = cs.MagnificationEnd
-		cs.MagnificationEnd = temp
-		log.Printf("INFO - MagnificationEnd is less than MagnficationStart. Switching the two values.")
-	}
 	// Smooth coloring wont work with one color
 	if len(cs.Palette) == 1 && cs.SmoothColoring == true {
 		cs.SmoothColoring = false
@@ -187,20 +165,22 @@ func (cs *CoordinatorSettings) Verify() error {
 
 /* Coordinator */
 type Coordinator struct {
-	ImageCount   int
-	ImageTasks   map[int]*ImageTask
-	Logger       *log.Logger
-	Mutex        sync.Mutex
-	PixelCount   int
-	Rectangle    image.Rectangle
-	ShorterSide  int
-	Settings     *CoordinatorSettings
-	TaskCount    int
-	TasksDone    chan LineTask
-	TaskSettings *TaskSettings
-	TasksTodo    chan LineTask
-	Wait         *sync.WaitGroup
-	Workers      map[string]*rpc.Client
+	ImageCount     int
+	ImageCompleted int
+	ImageTasks     map[int]*ImageTask
+	Logger         *log.Logger
+	Mutex          sync.Mutex
+	PixelCount     int
+	Rectangle      image.Rectangle
+	ShorterSide    int
+	Settings       *CoordinatorSettings
+	TaskCount      int
+	TaskCompleted  int
+	TasksDone      chan LineTask
+	TaskSettings   *TaskSettings
+	TasksTodo      chan LineTask
+	Wait           *sync.WaitGroup
+	Workers        map[string]*rpc.Client
 }
 
 type ImageTask struct {
@@ -226,7 +206,16 @@ func newCoordinator(settings CoordinatorSettings, ipAddress string, port int) Co
 	 */
 	imageCount := 0
 	for i := 0; i < len(settings.TransitionSettings); i++ {
-		imageCount += int(math.Ceil((math.Log(settings.TransitionSettings[i].MagnificationEnd) / math.Log(settings.TransitionSettings[i].MagnificationStep)) - math.Log(settings.TransitionSettings[i].MagnificationStart)))
+		transitionCount := 0
+		if settings.TransitionSettings[i].MagnificationStart < settings.TransitionSettings[i].MagnificationEnd {
+			// zooming in
+			transitionCount = int(math.Ceil((math.Log(settings.TransitionSettings[i].MagnificationEnd) / math.Log(settings.TransitionSettings[i].MagnificationStep)) - math.Log(settings.TransitionSettings[i].MagnificationStart)))
+		} else {
+			// zooming out
+			transitionCount = int(math.Ceil((math.Log(settings.TransitionSettings[i].MagnificationStart) / math.Log(settings.TransitionSettings[i].MagnificationStep)) - math.Log(settings.TransitionSettings[i].MagnificationEnd)))
+		}
+		imageCount += transitionCount
+		settings.TransitionSettings[i].FrameCount = transitionCount
 	}
 
 	coordinator := Coordinator{
@@ -250,8 +239,6 @@ func newCoordinator(settings CoordinatorSettings, ipAddress string, port int) Co
 		TasksDone:   make(chan LineTask, 1000),
 		TaskSettings: &TaskSettings{
 			Boundary:           settings.Boundary,
-			CenterX:            settings.CenterX,
-			CenterY:            settings.CenterY,
 			EscapeColor:        settings.EscapeColor,
 			Height:             settings.Height,
 			MaxIterations:      settings.MaxIterations,
@@ -285,20 +272,42 @@ func (c *Coordinator) callWorker(workerAddress string, method string, request in
 	return err
 }
 
+func (c *Coordinator) heartBeat() {
+	ticker := time.NewTicker(15 * time.Second)
+
+	for {
+		select {
+		case _ = <-ticker.C:
+			c.Logger.Printf("completed %d/%d images", c.ImageCompleted, c.ImageCount)
+			c.Logger.Printf("completed %d/%d tasks", c.TaskCompleted, c.TaskCount)
+		}
+	}
+}
+
 func (c *Coordinator) GenerateTasks() {
 	c.Logger.Printf("Generating %d tasks", c.TaskCount)
 
 	imageNumber := 0
 	// work through each transition
 	for transitionStep := 0; transitionStep < len(c.Settings.TransitionSettings); transitionStep++ {
+
 		// generate each image for this transition while zooming in exponentially
 		transition := c.Settings.TransitionSettings[transitionStep]
-		currentFrame := 1.0
-		FrameCount := math.Ceil((math.Log(transition.MagnificationEnd) / math.Log(transition.MagnificationStep)) - math.Log(transition.MagnificationStart))
+		magnification := transition.MagnificationStart
 		currentX := transition.StartX
 		currentY := transition.StartY
-		for magnification := transition.MagnificationStart; magnification <= transition.MagnificationEnd; magnification *= transition.MagnificationStep {
-			// generate each task for this image at this magnification
+
+		// generate each task for this image at this magnification
+		for currentFrame := 1; currentFrame <= transition.FrameCount; currentFrame++ {
+
+			if transition.MagnificationStart < transition.MagnificationEnd {
+				// zooming in
+				magnification *= transition.MagnificationStep
+			} else {
+				// zooming out
+				magnification /= transition.MagnificationStep
+			}
+
 			for row := 0; row < c.Settings.Height; row++ {
 				task := LineTask{
 					CenterX:       currentX,
@@ -316,17 +325,79 @@ func (c *Coordinator) GenerateTasks() {
 				c.Mutex.Unlock()
 			}
 
-			currentFrame++
-			t := currentFrame / FrameCount
-			currentX = lerpFloat64(transition.StartX, transition.EndX, easeOutExpo(t))
-			currentY = lerpFloat64(transition.StartY, transition.EndY, easeOutExpo(t))
+			t := float64(currentFrame) / float64(transition.FrameCount)
+			if transition.MagnificationStart < transition.MagnificationEnd {
+				// zooming in
+				currentX = lerpFloat64(transition.StartX, transition.EndX, easeOutExpo(t))
+				currentY = lerpFloat64(transition.StartY, transition.EndY, easeOutExpo(t))
+			} else {
+				// zooming out
+				currentX = lerpFloat64(transition.StartX, transition.EndX, easeInExpo(t))
+				currentY = lerpFloat64(transition.StartY, transition.EndY, easeInExpo(t))
+			}
 			imageNumber++
 		}
-		close(c.TasksTodo)
+
 	}
+	close(c.TasksTodo)
+
+	c.Logger.Printf("Done generating %d tasks", c.TaskCount)
 }
 
-/* RPC */
+func (c *Coordinator) IngestTasks() {
+	c.Logger.Print("Processing completed tasks")
+
+	go c.heartBeat()
+
+	digitCount := (int)(math.Log10((float64)(c.ImageCount)) + 1)
+	for tc := 1; tc <= c.TaskCount; tc++ {
+		task := <-c.TasksDone
+		c.TaskCompleted++
+
+		for it := 0; it < len(task.Colors); it++ {
+			// Get the task
+			imageTask, ok := c.ImageTasks[task.ImageNumber]
+
+			// Create the image task if it does not exist
+			if !ok {
+				imageTask = &ImageTask{
+					Image:      image.NewRGBA(c.Rectangle),
+					PixelsLeft: c.PixelCount,
+				}
+			}
+
+			// Draw the pixel on the image
+			imageTask.Image.SetRGBA(it, task.Row, task.Colors[it])
+			imageTask.PixelsLeft--
+
+			// Save the task
+			c.ImageTasks[task.ImageNumber] = imageTask
+
+			// Generate the image once all pixels are filled
+			if imageTask.PixelsLeft == 0 {
+				path := fmt.Sprintf("%[1]s/%0[2]*[3]d.jpg", c.Settings.RunName, digitCount, task.ImageNumber)
+				f, err := os.Create(path)
+				if err != nil {
+					c.Logger.Fatalf("ERROR - Unable to create image: %s", err)
+				}
+				err = jpeg.Encode(f, imageTask.Image, nil)
+				if err != nil {
+					c.Logger.Fatalf("ERROR - Unable to save image: %s", err)
+				}
+				// Remove the image to conserve memory
+				c.Mutex.Lock()
+				delete(c.ImageTasks, task.ImageNumber)
+				c.ImageCompleted++
+				c.Mutex.Unlock()
+
+				c.Logger.Printf("Saved image to ./%s", path)
+			}
+		}
+	}
+
+	c.Logger.Print("Done processing completed tasks")
+}
+
 func (c *Coordinator) RequestTask(request Nothing, reply *LineTask) error {
 	c.Mutex.Lock()
 	task, more := <-c.TasksTodo
@@ -354,8 +425,6 @@ func (c *Coordinator) GetTaskSettings(request Nothing, reply *TaskSettings) erro
 	// reply = c.TaskSettings
 
 	reply.Boundary = c.Settings.Boundary
-	reply.CenterX = c.Settings.CenterX
-	reply.CenterY = c.Settings.CenterY
 	reply.EscapeColor = c.Settings.EscapeColor
 	reply.Height = c.Settings.Height
 	reply.MaxIterations = c.Settings.MaxIterations
@@ -394,93 +463,4 @@ func (c *Coordinator) DeRegisterWorker(request string, reply *Nothing) error {
 	c.Wait.Done()
 	c.Mutex.Unlock()
 	return nil
-}
-
-/* Web Interface */
-func (c *Coordinator) StartWebInterface() error {
-	// parse all template files
-	var allFiles []string
-	files, _ := ioutil.ReadDir("./static/templates")
-
-	for _, file := range files {
-		filename := file.Name()
-		if strings.HasSuffix(filename, ".html") {
-			allFiles = append(allFiles, "./static/templates/"+filename)
-		}
-	}
-
-	// todo: handle case where allFiles is empty
-	templates, _ = template.New(filepath.Base(allFiles[0])).ParseFiles(allFiles...)
-
-	// set up a file server for static files
-	fileServer := http.FileServer(http.Dir("static"))
-	http.Handle("/static/", http.StripPrefix("/static/", fileServer))
-
-	http.HandleFunc("/", c.indexHandler)
-	http.HandleFunc("/settings", c.settingsHandler)
-	http.HandleFunc("/defaultSettings", c.defaultSettingsHandler)
-	go http.ListenAndServe("localhost:8080", nil)
-	c.Logger.Printf("Browser interface now running at localhost:8080")
-	return nil
-}
-
-func (c *Coordinator) indexHandler(w http.ResponseWriter, r *http.Request) {
-	type indexData struct {
-		Settings           *TaskSettings
-		MagnificationStart float64
-		MagnificationEnd   float64
-		MagnificationStep  float64
-	}
-
-	switch r.Method {
-	case http.MethodGet:
-		_ = templates.Execute(w, indexData{c.TaskSettings, c.Settings.MagnificationStart, c.Settings.MagnificationEnd, c.Settings.MagnificationStep})
-		break
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
-}
-
-func (c *Coordinator) settingsHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		settings, _ := json.Marshal(c.Settings)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(settings)
-		break
-	case http.MethodPost:
-		// todo: figure out why this is not updating...
-		_ = json.NewDecoder(r.Body).Decode(&c.Settings)
-		break
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
-}
-
-func (c *Coordinator) defaultSettingsHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		settings := make(map[string]string, 0)
-		flag.VisitAll(func(flag *flag.Flag) {
-			switch flag.Name {
-			// Filter out values that dont need to be passed on
-			case "coordinatorAddress":
-			case "isCoordinator":
-			case "isWorker":
-			case "superSampling":
-			case "workerCount":
-				return
-			default:
-				settings[flag.Name] = flag.DefValue
-			}
-		})
-		defaultSettings, _ := json.Marshal(settings)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(defaultSettings)
-		break
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
 }

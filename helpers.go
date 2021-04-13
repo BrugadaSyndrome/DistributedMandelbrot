@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -132,10 +133,16 @@ func lerpUint8(v1 uint8, v2 uint8, fraction float64) uint8 {
 	return uint8(lerpFloat64(v1f, v2f, fraction))
 }
 
-func easeFlip(t float64) float64 {
-	return 1 - t
+func easeOutExpo(t float64) float64 {
+	if t >= 1 {
+		return 1
+	}
+	return 1 - math.Pow(2, -10*t)
 }
 
-func easeOutExpo(t float64) float64 {
-	return easeFlip(easeFlip(t) * easeFlip(t))
+func easeInExpo(t float64) float64 {
+	if t <= 0 {
+		return 0
+	}
+	return math.Pow(2, 10*t-10)
 }

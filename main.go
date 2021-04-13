@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"image"
-	"image/jpeg"
 	"log"
 	"math"
 	"os"
@@ -17,17 +15,9 @@ import (
 /**
  * TODO
  * General
- * todo: have a 'heartbeat' function for the coordinator and workers that spit out progress periodically
+ * todo: get distributed mandelbrot working inside of a pi cluster
+ * todo: handle tasks that do not get returned
  * todo: ways to find interesting zoom points
- * Web Interface
- * todo: figure out how it should work (settings, coordinator and worker tabs maybe)
- * Cache iteration results in db
- * todo: get distributed mandelbrot working inside of a multi-machine vagrant instance
- *     : including firewall stuff (avoid private network options because that wont be available normally)
- * todo: stashing results in mysql db
- * GPU
- * todo: see how hard it would be to use GPUs
- * todo: if feasible, add option to use GPUs, CPUs or even both at the same time if possible
  */
 
 var (
@@ -91,60 +81,11 @@ func startCoordinatorMode(settingsFile string) {
 		coordinator.Logger.Printf("INFO - was not able to make a backup copy of settingsFile: %s", settingsFile)
 	}
 
-	// todo: if web interface is being used then dont start generating tasks yet
-	/*
-		if settings.EnableWebInterface {
-			_ = coordinator.StartWebInterface()
-		}
-	*/
-
 	go coordinator.GenerateTasks()
 	coordinator.Logger.Print("Waiting for workers to connect")
 
-	digitCount := (int)(math.Log10((float64)(coordinator.ImageCount)) + 1)
-	for c := 1; c <= coordinator.TaskCount; c++ {
-		task := <-coordinator.TasksDone
+	coordinator.IngestTasks()
 
-		for it := 0; it < len(task.Colors); it++ {
-			// Get the task
-			imageTask, ok := coordinator.ImageTasks[task.ImageNumber]
-			// Create the task to record the workers results
-			if !ok {
-				imageTask = &ImageTask{
-					Image:      image.NewRGBA(coordinator.Rectangle),
-					PixelsLeft: coordinator.PixelCount,
-				}
-			}
-
-			// Draw the pixel on the image
-			imageTask.Image.SetRGBA(it, task.Row, task.Colors[it])
-			imageTask.PixelsLeft--
-
-			// Save the task
-			coordinator.ImageTasks[task.ImageNumber] = imageTask
-
-			// Generate the image once all pixels are filled
-			if imageTask.PixelsLeft == 0 {
-				path := fmt.Sprintf("%[1]s/%0[2]*[3]d.jpg", coordinator.Settings.RunName, digitCount, task.ImageNumber)
-				f, err := os.Create(path)
-				if err != nil {
-					coordinator.Logger.Fatalf("ERROR - Unable to create image: %s", err)
-				}
-				err = jpeg.Encode(f, imageTask.Image, nil)
-				if err != nil {
-					coordinator.Logger.Fatalf("ERROR - Unable to save image: %s", err)
-				}
-				// Remove the image to conserve memory
-				coordinator.Mutex.Lock()
-				delete(coordinator.ImageTasks, task.ImageNumber)
-				coordinator.Mutex.Unlock()
-				coordinator.Logger.Printf("Saved image to ./%s [completed images: %d/%d] [completed tasks: %d/%d]", path, task.ImageNumber+1, coordinator.ImageCount, c, coordinator.TaskCount)
-			}
-		}
-	}
-	coordinator.Logger.Print("Done generating images")
-
-	// Wait for workers to shut down
 	coordinator.Logger.Print("Waiting for workers to shut down")
 	coordinator.Wait.Wait()
 
@@ -153,6 +94,7 @@ func startCoordinatorMode(settingsFile string) {
 
 	// Generate movie
 	if coordinator.Settings.GenerateMovie {
+		digitCount := (int)(math.Log10((float64)(coordinator.ImageCount)) + 1)
 		coordinator.Logger.Print("Making movie")
 		path, _ := os.Getwd()
 		args := []string{"-framerate", "1", "-r", "30", "-i", fmt.Sprintf("%s\\%s\\%%%dd.jpg", path, coordinator.Settings.RunName, digitCount), "-c:v", "libx264", "-pix_fmt", "yuvj420p", fmt.Sprintf("%s\\%s\\movie.mp4", path, coordinator.Settings.RunName)}

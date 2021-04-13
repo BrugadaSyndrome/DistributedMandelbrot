@@ -1,6 +1,6 @@
 # Distributed Mandelbrot
 
-This program is able to generate Mandelbrot images in a distributed manor. It leverages RPC calls to allow the worker
+This program is able to generate Mandelbrot images in a distributed manner. It leverages RPC calls to allow the worker
 instance to be on the same or different hardware as the coordinator instance.
 
 ### CLI Options
@@ -21,7 +21,6 @@ another instance is started in worker mode.**
 The coordinator mode settings json file has the following settings you can specify:
 
 * Boundary (integer: 100) - The escape boundary that the mandel process should bail out at
-* EnableWebInterface (bool: false) - **WIP Feature**.
 * EscapeColor (color.RGBA) - Specify the color to fill in the points in the Mandelbrot set
 * GeneratePaletteSettings ([]GeneratePaletteSettings) - Specify list of GeneratePaletteSettings objects (see
   coordinator.go file) to be used to generate a color palette. This feature is useful when you want to use a large color

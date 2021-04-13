@@ -57,6 +57,7 @@ type Worker struct {
 	Logger             *log.Logger
 	MathLog2           float64
 	Port               int
+	TasksCompleted     int
 	TaskSettings       TaskSettings
 	Wait               *sync.WaitGroup
 }
@@ -109,9 +110,19 @@ func (w *Worker) callCoordinator(method string, request interface{}, reply inter
 	return err
 }
 
+func (w *Worker) heartBeat() {
+	ticker := time.NewTicker(15 * time.Second)
+
+	for {
+		select {
+		case _ = <-ticker.C:
+			w.Logger.Printf("processed %d tasks", w.TasksCompleted)
+		}
+	}
+}
+
 func (w *Worker) ProcessTasks() {
 	var junk Nothing
-	var count int
 	var startTime time.Time
 	var elapsedTime time.Duration
 
@@ -132,6 +143,9 @@ func (w *Worker) ProcessTasks() {
 	w.TaskSettings = settings
 
 	w.Logger.Printf("Now processing tasks")
+
+	go w.heartBeat()
+
 	startTime = time.Now()
 	for {
 		var task LineTask
@@ -157,11 +171,11 @@ func (w *Worker) ProcessTasks() {
 		if err != nil {
 			w.Logger.Printf("WARNING - Coordinator.TaskFinished - %s", err)
 		}
-		count++
+		w.TasksCompleted++
 	}
 	// Worker is done processing
 	elapsedTime = time.Since(startTime)
-	w.Logger.Printf("Done processing %d tasks in %s", count, elapsedTime)
+	w.Logger.Printf("Done processing %d tasks in %s", w.TasksCompleted, elapsedTime)
 
 	// Inform coordinator we are leaving and shutdown
 	w.Logger.Print("Shutting down")
