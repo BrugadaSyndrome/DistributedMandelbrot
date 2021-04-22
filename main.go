@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 )
 
@@ -68,15 +69,15 @@ func startCoordinatorMode(settingsFile string) {
 	coordinator.Logger.Print("Starting coordinator")
 
 	// Create directory to store files from this run
-	if _, err = os.Stat(coordinator.Settings.RunName); os.IsNotExist(err) {
-		err = os.Mkdir(coordinator.Settings.RunName, os.ModePerm)
+	if _, err = os.Stat(filepath.Join(coordinator.Settings.SavePath, coordinator.Settings.RunName)); os.IsNotExist(err) {
+		err = os.Mkdir(filepath.Join(coordinator.Settings.SavePath, coordinator.Settings.RunName), os.ModePerm)
 		if err != nil {
 			coordinator.Logger.Fatalf("ERROR - unable to create folder: %s", err)
 		}
 	}
 
 	// Save settings to the directory as a backup
-	bytesWritten, err := writeFile(fmt.Sprintf("%s\\%s", coordinator.Settings.RunName, settingsFile), fileBytes)
+	bytesWritten, err := writeFile(filepath.Join(coordinator.Settings.SavePath, coordinator.Settings.RunName, settingsFile), fileBytes)
 	if err != nil || bytesWritten == 0 {
 		coordinator.Logger.Printf("INFO - was not able to make a backup copy of settingsFile: %s", settingsFile)
 	}
@@ -96,8 +97,7 @@ func startCoordinatorMode(settingsFile string) {
 	if coordinator.Settings.GenerateMovie {
 		digitCount := (int)(math.Log10((float64)(coordinator.ImageCount)) + 1)
 		coordinator.Logger.Print("Making movie")
-		path, _ := os.Getwd()
-		args := []string{"-framerate", "1", "-r", "30", "-i", fmt.Sprintf("%s\\%s\\%%%dd.jpg", path, coordinator.Settings.RunName, digitCount), "-c:v", "libx264", "-pix_fmt", "yuvj420p", fmt.Sprintf("%s\\%s\\movie.mp4", path, coordinator.Settings.RunName)}
+		args := []string{"-framerate", "1", "-r", "30", "-i", filepath.Join(coordinator.Settings.SavePath, coordinator.Settings.RunName, fmt.Sprintf("%%%dd.jpg", digitCount)), "-c:v", "libx264", "-pix_fmt", "yuvj420p", filepath.Join(coordinator.Settings.SavePath, coordinator.Settings.RunName, "movie.mp4")}
 		cmd := exec.Command("ffmpeg", args...)
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr

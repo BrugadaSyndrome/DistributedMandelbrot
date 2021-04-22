@@ -12,6 +12,7 @@ import (
 	"net/rpc"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -19,13 +20,13 @@ import (
 /* CoordinatorSettings */
 type CoordinatorSettings struct {
 	Boundary                float64
-	EnableWebInterface      bool
 	EscapeColor             color.RGBA
 	GenerateMovie           bool
 	GeneratePaletteSettings []GeneratePaletteSettings
 	Height                  int
 	MaxIterations           int
 	RunName                 string
+	SavePath                string
 	Palette                 []color.RGBA
 	SmoothColoring          bool
 	SuperSampling           int
@@ -72,7 +73,6 @@ func (cs *CoordinatorSettings) String() string {
 	output += fmt.Sprintf("Generate Movie: %t\n", cs.GenerateMovie)
 	output += fmt.Sprintf("Generate Palette Settings: %v\n", cs.GeneratePaletteSettings)
 	output += fmt.Sprintf("Height: %d\n", cs.Height)
-	output += fmt.Sprintf("Enable Web Interface: %t\n", cs.EnableWebInterface)
 	output += fmt.Sprintf("Escape Color: %v\n", cs.EscapeColor)
 	output += fmt.Sprintf("Max Iterations: %d\n", cs.MaxIterations)
 	output += fmt.Sprintf("Run Name: %s\n", cs.RunName)
@@ -88,7 +88,6 @@ func (cs *CoordinatorSettings) Verify() error {
 	if cs.Boundary <= 0 {
 		cs.Boundary = 100
 	}
-	// cs.EnableWebInterface defaults to false already
 	if cs.EscapeColor == (color.RGBA{}) {
 		cs.EscapeColor = color.RGBA{R: 0, G: 0, B: 0, A: 255}
 	}
@@ -107,6 +106,9 @@ func (cs *CoordinatorSettings) Verify() error {
 	}
 	if len(cs.Palette) == 0 {
 		cs.Palette = []color.RGBA{{R: 255, G: 255, B: 255, A: 255}}
+	}
+	if cs.SavePath == "" {
+		cs.SavePath, _ = os.Getwd()
 	}
 	// cs.SmoothColoring defaults to false already
 	if cs.SuperSampling < 1 {
@@ -375,7 +377,8 @@ func (c *Coordinator) IngestTasks() {
 
 			// Generate the image once all pixels are filled
 			if imageTask.PixelsLeft == 0 {
-				path := fmt.Sprintf("%[1]s/%0[2]*[3]d.jpg", c.Settings.RunName, digitCount, task.ImageNumber)
+				path := filepath.Join(c.Settings.SavePath, c.Settings.RunName, fmt.Sprintf("%0[1]*[2]d.jpg", digitCount, task.ImageNumber))
+				// path = fmt.Sprintf("%[1]s/%0[2]*[3]d.jpg", c.Settings.RunName, digitCount, task.ImageNumber)
 				f, err := os.Create(path)
 				if err != nil {
 					c.Logger.Fatalf("ERROR - Unable to create image: %s", err)
@@ -390,7 +393,7 @@ func (c *Coordinator) IngestTasks() {
 				c.ImageCompleted++
 				c.Mutex.Unlock()
 
-				c.Logger.Printf("Saved image to ./%s", path)
+				c.Logger.Printf("Saved image to %s", path)
 			}
 		}
 	}
