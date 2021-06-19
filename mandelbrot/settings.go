@@ -25,7 +25,7 @@ type Settings struct {
 }
 
 func (s *Settings) Verify() error {
-	s.logger = log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "MandelbrotSettings", log.All, nil)
+	s.logger = log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "MandelbrotSettings", log.Normal, nil)
 
 	if s.Boundary <= 0 {
 		s.Boundary = 100

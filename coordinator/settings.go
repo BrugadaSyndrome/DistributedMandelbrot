@@ -28,7 +28,7 @@ type settings struct {
 
 func NewSettings(settingsFile string) settings {
 	s := settings{
-		logger:        log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "CoordinatorSettings", log.All, nil),
+		logger:        log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "CoordinatorSettings", log.Normal, nil),
 		ServerAddress: "",
 	}
 	err, bytes := misc.ReadFile(settingsFile)

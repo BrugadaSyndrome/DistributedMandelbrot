@@ -45,7 +45,7 @@ func NewCoordinator(settingsFile string) Coordinator {
 	coordinator := Coordinator{
 		clients:    make(map[string]*rpc.TcpClient, 0),
 		images:     make(map[int]imageTask),
-		logger:     log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "Coordinator", log.All, nil),
+		logger:     log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "Coordinator", log.Normal, nil),
 		pixelCount: settings.MandelbrotSettings.Height * settings.MandelbrotSettings.Width,
 		rectangle: gimage.Rectangle{
 			Min: gimage.Point{
@@ -121,7 +121,7 @@ func NewCoordinator(settingsFile string) Coordinator {
 	// Create a log file to record the run
 	logFile, err := os.Create(filepath.Join(settings.SavePath, settings.RunName, "coordinator.log"))
 	misc.CheckError(err, coordinator.logger, misc.Warning)
-	coordinator.logger = log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "Coordinator", log.All, logFile)
+	coordinator.logger = log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "Coordinator", log.Normal, logFile)
 
 	go coordinator.tickers()
 	go coordinator.generateTasks()
@@ -232,6 +232,7 @@ func (c *Coordinator) generateTasks() {
 	c.logger.Debugf("Done generating %d tasks in %s", c.taskGeneratedCount, elapsedTime)
 }
 
+// todo: handle generate movie option
 func (c *Coordinator) ingestTasks() {
 	c.logger.Info("Ingesting tasks")
 

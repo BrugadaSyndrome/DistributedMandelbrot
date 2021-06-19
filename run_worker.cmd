@@ -1,1 +1,1 @@
-mandelbrot.exe -mode=worker -settings=settings_worker.json
+mandelbrot.exe -mode=worker -settings=settings_worker.json -workers=5

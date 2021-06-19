@@ -28,7 +28,7 @@
         "Height": 2160,
         "MaxIterations": 1000,
         "SmoothColoring": true,
-        "SuperSampling": 2,
+        "SuperSampling": 1,
         "Width": 3840
     },
     "ServerAddress": "127.0.0.1:51000",
@@ -41,6 +41,15 @@
             "EndY": -0.0847596,
             "MagnificationStart": 1,
             "MagnificationEnd": 250,
+            "MagnificationStep": 2
+        },
+        {
+            "StartX": -0.761574,
+            "StartY": -0.0847596,
+            "EndX": -0.5,
+            "EndY": 0.0,
+            "MagnificationStart": 250,
+            "MagnificationEnd": 1,
             "MagnificationStep": 2
         }
     ]

@@ -34,7 +34,7 @@ func NewWorker(settingsFile string) Worker {
 	misc.CheckError(err, worker.logger, misc.Fatal)
 	worker.logger.Debugf("Found free port: %d", port)
 	worker.myAddress = fmt.Sprintf("%s:%d", misc.GetLocalAddress(), port)
-	worker.logger = log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, fmt.Sprintf("Worker %s", worker.myAddress), log.All, nil)
+	worker.logger = log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, fmt.Sprintf("Worker %s", worker.myAddress), log.Normal, nil)
 	worker.ServerClient = rpc.NewTcpServerClient(&worker, worker.myAddress, worker.myAddress, settings.CoordinatorAddress, settings.CoordinatorAddress)
 	misc.CheckError(worker.ServerClient.Server.Run(), worker.logger, misc.Fatal)
 

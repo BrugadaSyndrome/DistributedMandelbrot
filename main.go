@@ -12,11 +12,13 @@ var (
 	logger       log.Logger
 	mode         string
 	settingsFile string
+	workerCount  uint
 )
 
 func main() {
 	flag.StringVar(&mode, "mode", "", "Specify if this instance is a 'coordinator' or 'worker'")
 	flag.StringVar(&settingsFile, "settings", "", "Specify the file with the settings for this run")
+	flag.UintVar(&workerCount, "workers", 2, "Specify the number of workers to create to process coordinator tasks")
 	flag.Parse()
 
 	logger = log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "Main", log.Normal, nil)
@@ -45,7 +47,8 @@ func startWorkerMode(settingsFile string) {
 	logger.Info("Started Worker Mode")
 
 	workers := make([]*worker.Worker, 0)
-	for i := 0; i < 5; i++ {
+	var i uint
+	for i = 0; i < workerCount; i++ {
 		w := worker.NewWorker(settingsFile)
 		workers = append(workers, &w)
 	}

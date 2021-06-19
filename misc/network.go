@@ -28,7 +28,7 @@ func GetFreePort() (int, error) {
 }
 func GetLocalAddress() string {
 	var localAddress string
-	log := log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "", log.All, nil)
+	log := log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "", log.Normal, nil)
 
 	networkInterfaces, err := net.Interfaces()
 	if err != nil {
