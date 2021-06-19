@@ -1,3 +1,4 @@
 {
+    "CoordinatorAddress": "127.0.0.1:51000",
     "WorkerCount": 5
 }

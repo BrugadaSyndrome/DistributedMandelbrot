@@ -52,4 +52,3 @@ The worker mode settings json file has the following settings you can specify:
 * CoordinatorPort (int: 10000) - The port the coordinator is using
 * WorkerCount (int: 2) - The number of worker threads to run.
 * WorkerAddress (string: localhost) - The IP address the worker will use.
-* WorkerPort (int: 100001) - The port the worker will use.
