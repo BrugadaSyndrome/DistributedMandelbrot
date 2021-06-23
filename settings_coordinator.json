@@ -42,15 +42,6 @@
             "MagnificationStart": 1,
             "MagnificationEnd": 250,
             "MagnificationStep": 2
-        },
-        {
-            "StartX": -0.761574,
-            "StartY": -0.0847596,
-            "EndX": -0.5,
-            "EndY": 0.0,
-            "MagnificationStart": 250,
-            "MagnificationEnd": 1,
-            "MagnificationStep": 2
         }
     ]
 }

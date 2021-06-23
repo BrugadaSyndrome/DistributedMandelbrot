@@ -21,11 +21,12 @@ func (g Generation) String() string {
 }
 
 type Task struct {
-	CurrentTask uint
-	ID          uint
-	ImageNumber uint
-	Results     []Pixel
-	Tasks       []Coordinate
+	CurrentTask   uint
+	ID            uint
+	ImageNumber   uint
+	Results       []Pixel
+	Tasks         []Coordinate
+	WorkerAddress string
 }
 
 func NewTask(id uint, imageNumber uint) Task {

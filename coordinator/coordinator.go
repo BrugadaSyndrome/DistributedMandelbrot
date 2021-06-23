@@ -25,6 +25,7 @@ type Coordinator struct {
 	imageCompletedCount uint
 	imageCount          uint
 	logger              log.Logger
+	mutex               sync.Mutex
 	name                string
 	pixelCount          uint
 	rectangle           gimage.Rectangle
@@ -32,6 +33,7 @@ type Coordinator struct {
 	taskCount           uint
 	taskGeneratedCount  uint
 	taskIngestedCount   uint
+	tasksHandedOut      map[string]map[uint]task.Task // keep track of all tasks workers have
 	tasksDone           chan task.Task
 	tasksTodo           chan task.Task
 	workerWait          *sync.WaitGroup
@@ -39,11 +41,12 @@ type Coordinator struct {
 	Server rpc.TcpServer
 }
 
+// todo: handle generate movie option
 func NewCoordinator(settingsFile string) Coordinator {
 	settings := NewSettings(settingsFile)
 
 	coordinator := Coordinator{
-		clients:    make(map[string]*rpc.TcpClient, 0),
+		clients:    make(map[string]*rpc.TcpClient),
 		images:     make(map[int]imageTask),
 		logger:     log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "Coordinator", log.Normal, nil),
 		pixelCount: settings.MandelbrotSettings.Height * settings.MandelbrotSettings.Width,
@@ -57,10 +60,11 @@ func NewCoordinator(settingsFile string) Coordinator {
 				Y: int(settings.MandelbrotSettings.Height),
 			},
 		},
-		settings:   settings,
-		tasksDone:  make(chan task.Task, 1000),
-		tasksTodo:  make(chan task.Task, 1000),
-		workerWait: &sync.WaitGroup{},
+		settings:       settings,
+		tasksHandedOut: make(map[string]map[uint]task.Task),
+		tasksDone:      make(chan task.Task, 1000),
+		tasksTodo:      make(chan task.Task, 1000),
+		workerWait:     &sync.WaitGroup{},
 	}
 	misc.CheckError(settings.Verify(), coordinator.logger, misc.Fatal)
 
@@ -143,11 +147,25 @@ func (c *Coordinator) tickers() {
 				var reply bool
 				err := v.Call("Worker.RollCall", junk, &reply)
 				if err != nil {
-					// Cannot communicate with the worker so we should not try again
-					c.logger.Warningf("Worker missed roll call: %s", err)
+					// Cannot communicate with the worker
+					c.logger.Warningf("Worker %s missed roll call: %s", v.Name, err)
 					misc.CheckError(v.Disconnect(), c.logger, misc.Warning)
+
+					// todo: ? refactor this into the Coordinator.Deregister method
+					// Put tasks  this worker has not returned yet back into the tasksTodo pool
+					go func(tasks map[uint]task.Task) {
+						for _, v := range tasks {
+							c.tasksTodo <- v
+						}
+					}(c.tasksHandedOut[v.Name])
+
+					c.mutex.Lock()
+					// Remove all tasks that user has take
+					delete(c.tasksHandedOut, v.Name)
+					// Dont try to connect to this client again
 					delete(c.clients, k)
-					continue
+					c.mutex.Unlock()
+					c.workerWait.Done()
 				}
 			}
 
@@ -158,7 +176,6 @@ func (c *Coordinator) tickers() {
 	}
 }
 
-// todo: add a way to handle task that were not returned from workers
 func (c *Coordinator) generateTasks() {
 	c.logger.Info("Generating tasks")
 
@@ -192,24 +209,24 @@ func (c *Coordinator) generateTasks() {
 			case task.Row:
 				var row uint
 				for row = 0; row < c.settings.MandelbrotSettings.Height; row++ {
-					c.taskGeneratedCount++
 					taskTodo := task.NewTask(c.taskGeneratedCount, imageNumber)
 					taskTodo.AddTasksForRow(currentX, currentY, magnification, row, c.settings.MandelbrotSettings.Width)
 					c.tasksTodo <- taskTodo
+					c.taskGeneratedCount++
 				}
 			case task.Column:
 				var column uint
 				for column = 0; column < c.settings.MandelbrotSettings.Width; column++ {
-					c.taskGeneratedCount++
 					taskTodo := task.NewTask(c.taskGeneratedCount, imageNumber)
 					taskTodo.AddTasksForColumn(currentX, currentY, magnification, c.settings.MandelbrotSettings.Height, column)
 					c.tasksTodo <- taskTodo
+					c.taskGeneratedCount++
 				}
 			case task.Image:
-				c.taskGeneratedCount++
 				taskTodo := task.NewTask(c.taskGeneratedCount, imageNumber)
 				taskTodo.AddTasksForImage(currentX, currentY, magnification, c.settings.MandelbrotSettings.Height, c.settings.MandelbrotSettings.Width)
 				c.tasksTodo <- taskTodo
+				c.taskGeneratedCount++
 			default:
 				c.logger.Fatalf("Unknown generation type: %d", c.settings.TaskGeneration)
 				break
@@ -232,7 +249,6 @@ func (c *Coordinator) generateTasks() {
 	c.logger.Debugf("Done generating %d tasks in %s", c.taskGeneratedCount, elapsedTime)
 }
 
-// todo: handle generate movie option
 func (c *Coordinator) ingestTasks() {
 	c.logger.Info("Ingesting tasks")
 
@@ -264,6 +280,9 @@ func (c *Coordinator) ingestTasks() {
 			image.Image.SetRGBA(int(result.Column), int(result.Row), result.Color)
 			image.PixelsLeft--
 			c.images[int(taskReceived.ImageNumber)] = image
+			c.mutex.Lock()
+			delete(c.tasksHandedOut[taskReceived.WorkerAddress], taskReceived.ID)
+			c.mutex.Unlock()
 
 			// All pixels have been recorded so save the image
 			if image.PixelsLeft == 0 {
@@ -297,6 +316,7 @@ func (c *Coordinator) ingestTasks() {
 func (c *Coordinator) RegisterWorker(workerServerAddress string, reply *misc.Nothing) error {
 	client := rpc.NewTcpClient(workerServerAddress, workerServerAddress)
 	c.clients[workerServerAddress] = &client
+	c.tasksHandedOut[workerServerAddress] = make(map[uint]task.Task)
 	err := client.Connect()
 	misc.CheckError(err, c.logger, misc.Warning)
 	c.logger.Infof("Worker joined: %s", workerServerAddress)
@@ -319,13 +339,17 @@ func (c *Coordinator) RollCall(nothing misc.Nothing, present *bool) error {
 	return nil
 }
 
-func (c *Coordinator) GetTask(nothing misc.Nothing, task *task.Task) error {
+func (c *Coordinator) GetTask(workerAddress string, task *task.Task) error {
 	todo, more := <-c.tasksTodo
 	if !more {
 		task = nil
 		c.logger.Info("Telling worker that all tasks are handed out")
 		return errors.New("all tasks handed out")
 	}
+	c.mutex.Lock()
+	todo.WorkerAddress = workerAddress
+	c.tasksHandedOut[workerAddress][todo.ID] = todo
+	c.mutex.Unlock()
 	*task = todo
 	return nil
 }

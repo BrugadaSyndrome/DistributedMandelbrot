@@ -91,7 +91,7 @@ func (w *Worker) processTasks() {
 		var taskTodo task.Task
 		var err error
 
-		err = w.ServerClient.Client.Call("Coordinator.GetTask", nothing, &taskTodo)
+		err = w.ServerClient.Client.Call("Coordinator.GetTask", w.myAddress, &taskTodo)
 		if err != nil {
 			// This is an expected error. No more work to do
 			if err.Error() == "all tasks handed out" {

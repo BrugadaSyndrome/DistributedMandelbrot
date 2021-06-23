@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"runtime"
 )
 
 type ansiEscapeCode int
@@ -160,7 +159,7 @@ func (l *Logger) Warningf(format string, values ...interface{}) {
 }
 
 func (l *Logger) Info(message string) {
-	if l.verbosity < All {
+	if l.verbosity < Normal {
 		return
 	}
 
@@ -201,8 +200,10 @@ func (l *Logger) Debugf(format string, values ...interface{}) {
 
 func ansiEscapeEncode(message string, fg ansiEscapeCode, bg ansiEscapeCode, display ansiEscapeCode) string {
 	// Ansi escape codes do not work in windows terminal
-	if runtime.GOOS == "windows" {
-		return message
-	}
+	/*
+		if runtime.GOOS == "windows" {
+			return message
+		}
+	*/
 	return fmt.Sprintf("\033[%d;%d;%dm%s\033[0m", fg, bg, display, message)
 }
