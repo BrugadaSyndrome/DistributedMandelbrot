@@ -31,9 +31,9 @@ func NewSettings(settingsFile string) settings {
 		logger:        log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "CoordinatorSettings", log.Normal, nil),
 		ServerAddress: "",
 	}
-	err, bytes := misc.ReadFile(settingsFile)
+	err, fileBytes := misc.ReadFile(settingsFile)
 	misc.CheckError(err, s.logger, misc.Fatal)
-	misc.CheckError(json.Unmarshal(bytes, &s), s.logger, misc.Fatal)
+	misc.CheckError(json.Unmarshal(fileBytes, &s), s.logger, misc.Fatal)
 	misc.CheckError(s.Verify(), s.logger, misc.Fatal)
 	s.logger.Debug(s.String())
 	return s
@@ -81,7 +81,7 @@ func (s *settings) Verify() error {
 		cmd := exec.Command("ffmpeg")
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
-		cmd.Run()
+		misc.CheckError(cmd.Run(), s.logger, misc.Warning)
 		if !bytes.Contains(stderr.Bytes(), []byte(`ffmpeg version`)) {
 			s.GenerateMovie = false
 			s.logger.Info("Ffmpeg is not installed. Disabling GenerateMovie.")

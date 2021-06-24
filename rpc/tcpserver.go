@@ -3,6 +3,7 @@ package rpc
 import (
 	glog "log"
 	"mandelbrot/log"
+	"mandelbrot/misc"
 	"net"
 	"net/rpc"
 	"sync"
@@ -65,7 +66,7 @@ func (ts *TcpServer) Run() error {
 				return
 			default:
 				// Poll this connection periodically
-				ts.listener.SetDeadline(time.Now().Add(1 * time.Second))
+				misc.CheckError(ts.listener.SetDeadline(time.Now().Add(1*time.Second)), ts.Logger, misc.Fatal)
 			}
 
 			conn, err := ts.listener.Accept()

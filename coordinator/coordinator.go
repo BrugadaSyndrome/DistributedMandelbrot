@@ -143,7 +143,7 @@ func (c *Coordinator) tickers() {
 		case _ = <-rollCall.C:
 			c.logger.Debug("Roll call ticker")
 			var junk misc.Nothing
-			for k, v := range c.clients {
+			for _, v := range c.clients {
 				var reply bool
 				err := v.Call("Worker.RollCall", junk, &reply)
 				if err != nil {
@@ -151,21 +151,9 @@ func (c *Coordinator) tickers() {
 					c.logger.Warningf("Worker %s missed roll call: %s", v.Name, err)
 					misc.CheckError(v.Disconnect(), c.logger, misc.Warning)
 
-					// todo: ? refactor this into the Coordinator.Deregister method
-					// Put tasks  this worker has not returned yet back into the tasksTodo pool
-					go func(tasks map[uint]task.Task) {
-						for _, v := range tasks {
-							c.tasksTodo <- v
-						}
-					}(c.tasksHandedOut[v.Name])
-
-					c.mutex.Lock()
-					// Remove all tasks that user has take
-					delete(c.tasksHandedOut, v.Name)
-					// Dont try to connect to this client again
-					delete(c.clients, k)
-					c.mutex.Unlock()
-					c.workerWait.Done()
+					// Remove worker from pool
+					var nothing misc.Nothing
+					misc.CheckError(c.DeRegisterWorker(v.Name, &nothing), c.logger, misc.Warning)
 				}
 			}
 
@@ -314,11 +302,14 @@ func (c *Coordinator) ingestTasks() {
 }
 
 func (c *Coordinator) RegisterWorker(workerServerAddress string, reply *misc.Nothing) error {
+	// Create a client to communicate with this worker
 	client := rpc.NewTcpClient(workerServerAddress, workerServerAddress)
 	c.clients[workerServerAddress] = &client
+	misc.CheckError(client.Connect(), c.logger, misc.Warning)
+
+	// Track all tasks this worker checks out
 	c.tasksHandedOut[workerServerAddress] = make(map[uint]task.Task)
-	err := client.Connect()
-	misc.CheckError(err, c.logger, misc.Warning)
+
 	c.logger.Infof("Worker joined: %s", workerServerAddress)
 	c.workerWait.Add(1)
 
@@ -326,8 +317,22 @@ func (c *Coordinator) RegisterWorker(workerServerAddress string, reply *misc.Not
 }
 
 func (c *Coordinator) DeRegisterWorker(workerServerAddress string, reply *misc.Nothing) error {
-	err := c.clients[workerServerAddress].Disconnect()
-	misc.CheckError(err, c.logger, misc.Warning)
+	// Put tasks  this worker has not returned yet back into the tasksTodo pool
+	go func(tasks map[uint]task.Task) {
+		for _, v := range tasks {
+			c.tasksTodo <- v
+		}
+	}(c.tasksHandedOut[workerServerAddress])
+
+	// Disconnect from worker
+	misc.CheckError(c.clients[workerServerAddress].Disconnect(), c.logger, misc.Warning)
+
+	// Remove stored values associated with this worker
+	c.mutex.Lock()
+	delete(c.tasksHandedOut, workerServerAddress)
+	delete(c.clients, workerServerAddress)
+	c.mutex.Unlock()
+
 	c.logger.Infof("Worker left: %s", workerServerAddress)
 	c.workerWait.Done()
 

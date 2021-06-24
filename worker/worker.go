@@ -68,8 +68,8 @@ func (w *Worker) tickers() {
 			if err != nil {
 				// Cannot communicate with the Coordinator so we should shut down
 				w.logger.Warningf("Coordinator missed roll call: %s", err)
-				w.ServerClient.Client.Disconnect()
-				w.ServerClient.Server.Stop()
+				misc.CheckError(w.ServerClient.Client.Disconnect(), w.logger, misc.Warning)
+				misc.CheckError(w.ServerClient.Server.Stop(), w.logger, misc.Warning)
 				continue
 			}
 
@@ -133,7 +133,7 @@ func (w *Worker) processTasks() {
 	w.logger.Debugf("Processed %d tasks in %s", w.tasksCompleted, elapsedTime)
 
 	w.logger.Info("Shutting down")
-	w.ServerClient.Client.Call("Coordinator.DeRegisterWorker", w.myAddress, &nothing)
+	misc.CheckError(w.ServerClient.Client.Call("Coordinator.DeRegisterWorker", w.myAddress, &nothing), w.logger, misc.Warning)
 	misc.CheckError(w.ServerClient.Client.Disconnect(), w.logger, misc.Warning)
 	misc.CheckError(w.ServerClient.Server.Stop(), w.logger, misc.Warning)
 }

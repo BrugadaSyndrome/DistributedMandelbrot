@@ -28,11 +28,11 @@ func GetFreePort() (int, error) {
 }
 func GetLocalAddress() string {
 	var localAddress string
-	log := log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "", log.Normal, nil)
+	logger := log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "", log.Normal, nil)
 
 	networkInterfaces, err := net.Interfaces()
 	if err != nil {
-		log.Fatal("Failed to find network interface on this device")
+		logger.Fatal("Failed to find network interface on this device")
 	}
 
 	// Attempt to find the first non-loop back network interface with an IP address
@@ -40,7 +40,7 @@ func GetLocalAddress() string {
 		if elt.Flags&net.FlagLoopback == 0 && elt.Flags&net.FlagUp != 0 {
 			address, err := elt.Addrs()
 			if err != nil {
-				log.Fatal("Failed to get an address form the network interface")
+				logger.Fatal("Failed to get an address form the network interface")
 			}
 
 			for _, addr := range address {
@@ -55,7 +55,7 @@ func GetLocalAddress() string {
 	}
 
 	if localAddress == "" {
-		log.Fatal("Failed to find a non-loopback interface with valid address on this device")
+		logger.Fatal("Failed to find a non-loopback interface with valid address on this device")
 	}
 
 	return localAddress
