@@ -1,6 +1,7 @@
 package coordinator
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"mandelbrot/task"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -21,6 +23,7 @@ import (
 
 type Coordinator struct {
 	clients             map[string]*rpc.TcpClient
+	digitCount          uint // Used to format name of images for ffmpeg
 	images              map[int]imageTask
 	imageCompletedCount uint
 	imageCount          uint
@@ -41,7 +44,6 @@ type Coordinator struct {
 	Server rpc.TcpServer
 }
 
-// todo: handle generate movie option
 func NewCoordinator(settingsFile string) Coordinator {
 	settings := NewSettings(settingsFile)
 
@@ -88,6 +90,9 @@ func NewCoordinator(settingsFile string) Coordinator {
 		coordinator.imageCount += transitionCount
 		settings.TransitionSettings[i].FrameCount = transitionCount
 	}
+
+	// ffmpeg needs the images named in a certain way
+	coordinator.digitCount = (uint)(math.Log10((float64)(coordinator.imageCount)) + 1)
 
 	// Determine the number of tasks that will be generated so the coordinator knows when to shut down
 	switch settings.TaskGeneration {
@@ -267,14 +272,14 @@ func (c *Coordinator) ingestTasks() {
 			result := taskReceived.Results[r]
 			image.Image.SetRGBA(int(result.Column), int(result.Row), result.Color)
 			image.PixelsLeft--
-			c.images[int(taskReceived.ImageNumber)] = image
 			c.mutex.Lock()
+			c.images[int(taskReceived.ImageNumber)] = image
 			delete(c.tasksHandedOut[taskReceived.WorkerAddress], taskReceived.ID)
 			c.mutex.Unlock()
 
 			// All pixels have been recorded so save the image
 			if image.PixelsLeft == 0 {
-				path := filepath.Join(c.settings.SavePath, c.settings.RunName, fmt.Sprintf("%d.jpg", taskReceived.ImageNumber))
+				path := filepath.Join(c.settings.SavePath, c.settings.RunName, fmt.Sprintf("%0[1]*[2]d.jpg", c.digitCount, taskReceived.ImageNumber))
 				f, err := os.Create(path)
 				if err != nil {
 					c.logger.Fatalf("ERROR - Unable to create image: %s", err)
@@ -286,7 +291,9 @@ func (c *Coordinator) ingestTasks() {
 				c.logger.Infof("Saved image to %s", path)
 
 				// Remove the image to conserve memory
+				c.mutex.Lock()
 				delete(c.images, int(taskReceived.ImageNumber))
+				c.mutex.Unlock()
 				c.imageCompletedCount++
 			}
 		}
@@ -298,17 +305,34 @@ func (c *Coordinator) ingestTasks() {
 
 	c.logger.Infof("Waiting for %d workers to disconnect", len(c.clients))
 	c.workerWait.Wait()
+
+	if c.settings.GenerateMovie {
+		c.generateMovie()
+	}
+
+	c.logger.Info("Shutting Down")
 	misc.CheckError(c.Server.Stop(), c.logger, misc.Warning)
+}
+
+func (c *Coordinator) generateMovie() {
+	c.logger.Info("Making movie")
+	args := []string{"-r", "60", "-i", filepath.Join(c.settings.SavePath, c.settings.RunName, fmt.Sprintf("%%%dd.jpg", c.digitCount)), "-c:v", "libx264", "-pix_fmt", "yuvj420p", filepath.Join(c.settings.SavePath, c.settings.RunName, "movie.mp4")}
+	cmd := exec.Command("ffmpeg", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	misc.CheckError(cmd.Run(), c.logger, misc.Error)
+	c.logger.Info("Done making movie")
 }
 
 func (c *Coordinator) RegisterWorker(workerServerAddress string, reply *misc.Nothing) error {
 	// Create a client to communicate with this worker
 	client := rpc.NewTcpClient(workerServerAddress, workerServerAddress)
+	c.mutex.Lock()
 	c.clients[workerServerAddress] = &client
-	misc.CheckError(client.Connect(), c.logger, misc.Warning)
-
 	// Track all tasks this worker checks out
 	c.tasksHandedOut[workerServerAddress] = make(map[uint]task.Task)
+	c.mutex.Unlock()
+	misc.CheckError(client.Connect(), c.logger, misc.Warning)
 
 	c.logger.Infof("Worker joined: %s", workerServerAddress)
 	c.workerWait.Add(1)

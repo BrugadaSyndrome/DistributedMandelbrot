@@ -1,5 +1,5 @@
 {
-    "GenerateMovie": false,
+    "GenerateMovie": true,
     "MandelbrotSettings": {
         "Boundary": 1000,
         "EscapeColor": {
@@ -41,7 +41,7 @@
             "EndY": -0.0847596,
             "MagnificationStart": 1,
             "MagnificationEnd": 250,
-            "MagnificationStep": 2
+            "MagnificationStep": 1.25
         }
     ]
 }
