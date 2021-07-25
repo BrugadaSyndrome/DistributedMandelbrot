@@ -1,6 +1,6 @@
 package misc
 
-import "mandelbrot/log"
+import "DistributedMandelbrot/log"
 
 const (
 	Fatal Severity = iota

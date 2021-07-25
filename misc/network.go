@@ -1,8 +1,8 @@
 package misc
 
 import (
+	"DistributedMandelbrot/log"
 	glog "log"
-	"mandelbrot/log"
 	"net"
 )
 

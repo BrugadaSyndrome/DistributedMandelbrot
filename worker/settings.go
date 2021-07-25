@@ -1,11 +1,11 @@
 package worker
 
 import (
+	"DistributedMandelbrot/log"
+	"DistributedMandelbrot/misc"
 	"encoding/json"
 	"fmt"
 	glog "log"
-	"mandelbrot/log"
-	"mandelbrot/misc"
 )
 
 type settings struct {

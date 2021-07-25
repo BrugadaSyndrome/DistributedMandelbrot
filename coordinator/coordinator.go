@@ -1,6 +1,11 @@
 package coordinator
 
 import (
+	"DistributedMandelbrot/log"
+	"DistributedMandelbrot/mandelbrot"
+	"DistributedMandelbrot/misc"
+	"DistributedMandelbrot/rpc"
+	"DistributedMandelbrot/task"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -8,11 +13,6 @@ import (
 	gimage "image"
 	"image/jpeg"
 	glog "log"
-	"mandelbrot/log"
-	"mandelbrot/mandelbrot"
-	"mandelbrot/misc"
-	"mandelbrot/rpc"
-	"mandelbrot/task"
 	"math"
 	"os"
 	"os/exec"
@@ -121,8 +121,8 @@ func NewCoordinator(settingsFile string) Coordinator {
 	}
 
 	// Copy the settings to the directory so the run can be duplicated in the future
-	bytes, err := json.Marshal(settings)
-	bytesWritten, err := misc.WriteFile(filepath.Join(settings.SavePath, settings.RunName, settingsFile), bytes)
+	marshaledSettings, err := json.Marshal(settings)
+	bytesWritten, err := misc.WriteFile(filepath.Join(settings.SavePath, settings.RunName, settingsFile), marshaledSettings)
 	if err != nil || bytesWritten == 0 {
 		coordinator.logger.Fatalf("Unable to make a backup copy of settingsFile: %s", settingsFile)
 	}

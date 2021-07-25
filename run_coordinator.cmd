@@ -1,1 +1,1 @@
-mandelbrot.exe -mode=coordinator -settings=settings_coordinator.json
+DistributedMandelbrot.exe -mode=coordinator -settings=settings_coordinator.json

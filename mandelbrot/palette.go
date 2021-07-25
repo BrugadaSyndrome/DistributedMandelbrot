@@ -1,8 +1,8 @@
 package mandelbrot
 
 import (
+	"DistributedMandelbrot/misc"
 	"image/color"
-	"mandelbrot/misc"
 )
 
 type generatePaletteSettings struct {

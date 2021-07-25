@@ -1,13 +1,13 @@
 package worker
 
 import (
+	"DistributedMandelbrot/log"
+	"DistributedMandelbrot/mandelbrot"
+	"DistributedMandelbrot/misc"
+	"DistributedMandelbrot/rpc"
+	"DistributedMandelbrot/task"
 	"fmt"
 	glog "log"
-	"mandelbrot/log"
-	"mandelbrot/mandelbrot"
-	"mandelbrot/misc"
-	"mandelbrot/rpc"
-	"mandelbrot/task"
 	"time"
 )
 
@@ -85,7 +85,7 @@ func (w *Worker) processTasks() {
 
 	var nothing misc.Nothing
 	var elapsedTime time.Duration
-	var startTime time.Time = time.Now()
+	var startTime = time.Now()
 
 	for {
 		var taskTodo task.Task

@@ -1,9 +1,9 @@
 package mandelbrot
 
 import (
+	"DistributedMandelbrot/log"
 	"image/color"
 	glog "log"
-	"mandelbrot/log"
 )
 
 type Settings struct {

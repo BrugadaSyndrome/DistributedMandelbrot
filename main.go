@@ -1,11 +1,11 @@
 package main
 
 import (
+	"DistributedMandelbrot/coordinator"
+	"DistributedMandelbrot/log"
+	"DistributedMandelbrot/worker"
 	"flag"
 	glog "log"
-	"mandelbrot/coordinator"
-	"mandelbrot/log"
-	"mandelbrot/worker"
 )
 
 var (

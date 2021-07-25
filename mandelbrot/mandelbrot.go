@@ -1,9 +1,9 @@
 package mandelbrot
 
 import (
+	"DistributedMandelbrot/misc"
+	"DistributedMandelbrot/task"
 	"image/color"
-	"mandelbrot/misc"
-	"mandelbrot/task"
 	"math"
 )
 

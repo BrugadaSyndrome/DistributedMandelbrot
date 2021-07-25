@@ -1,14 +1,14 @@
 package coordinator
 
 import (
+	"DistributedMandelbrot/log"
+	"DistributedMandelbrot/mandelbrot"
+	"DistributedMandelbrot/misc"
+	"DistributedMandelbrot/task"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	glog "log"
-	"mandelbrot/log"
-	"mandelbrot/mandelbrot"
-	"mandelbrot/misc"
-	"mandelbrot/task"
 	"os"
 	"os/exec"
 	"time"

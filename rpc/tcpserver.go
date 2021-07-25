@@ -1,9 +1,9 @@
 package rpc
 
 import (
+	"DistributedMandelbrot/log"
+	"DistributedMandelbrot/misc"
 	glog "log"
-	"mandelbrot/log"
-	"mandelbrot/misc"
 	"net"
 	"net/rpc"
 	"sync"

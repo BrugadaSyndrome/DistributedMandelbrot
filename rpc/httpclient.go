@@ -1,10 +1,10 @@
 package rpc
 
 import (
+	"DistributedMandelbrot/log"
 	"errors"
 	"fmt"
 	glog "log"
-	"mandelbrot/log"
 	"net/rpc"
 )
 

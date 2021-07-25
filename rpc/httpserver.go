@@ -1,9 +1,9 @@
 package rpc
 
 import (
+	"DistributedMandelbrot/log"
 	"context"
 	glog "log"
-	"mandelbrot/log"
 	"net"
 	"net/http"
 	"net/rpc"
