@@ -1,21 +1,21 @@
 package coordinator
 
 import (
-	"DistributedMandelbrot/log"
 	"DistributedMandelbrot/mandelbrot"
 	"DistributedMandelbrot/misc"
 	"DistributedMandelbrot/task"
 	"bytes"
 	"encoding/json"
 	"fmt"
-	glog "log"
+	"github.com/BrugadaSyndrome/bslogger"
+	"log"
 	"os"
 	"os/exec"
 	"time"
 )
 
 type settings struct {
-	logger log.Logger
+	logger bslogger.Logger
 
 	GenerateMovie      bool
 	MandelbrotSettings mandelbrot.Settings
@@ -28,7 +28,7 @@ type settings struct {
 
 func NewSettings(settingsFile string) settings {
 	s := settings{
-		logger:        log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "CoordinatorSettings", log.Normal, nil),
+		logger:        bslogger.NewLogger(log.Ldate|log.Ltime|log.Lmsgprefix, "CoordinatorSettings", bslogger.Normal, nil),
 		ServerAddress: "",
 	}
 	err, fileBytes := misc.ReadFile(settingsFile)

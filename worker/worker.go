@@ -1,19 +1,19 @@
 package worker
 
 import (
-	"DistributedMandelbrot/log"
 	"DistributedMandelbrot/mandelbrot"
 	"DistributedMandelbrot/misc"
-	"DistributedMandelbrot/rpc"
 	"DistributedMandelbrot/task"
 	"fmt"
-	glog "log"
+	"github.com/BrugadaSyndrome/bslogger"
+	"github.com/BrugadaSyndrome/rpc"
+	"log"
 	"time"
 )
 
 type Worker struct {
 	coordinatorAddress string
-	logger             log.Logger
+	logger             bslogger.Logger
 	mandelbrot         mandelbrot.Mandelbrot
 	myAddress          string
 	tasksCompleted     int
@@ -25,7 +25,7 @@ func NewWorker(settingsFile string) Worker {
 	settings := NewSettings(settingsFile)
 	worker := Worker{
 		coordinatorAddress: settings.CoordinatorAddress,
-		logger:             log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "Worker", log.Normal, nil),
+		logger:             bslogger.NewLogger(log.Ldate|log.Ltime|log.Lmsgprefix, "Worker", bslogger.Normal, nil),
 	}
 	misc.CheckError(settings.Verify(), worker.logger, misc.Fatal)
 
@@ -34,7 +34,7 @@ func NewWorker(settingsFile string) Worker {
 	misc.CheckError(err, worker.logger, misc.Fatal)
 	worker.logger.Debugf("Found free port: %d", port)
 	worker.myAddress = fmt.Sprintf("%s:%d", misc.GetLocalAddress(), port)
-	worker.logger = log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, fmt.Sprintf("Worker %s", worker.myAddress), log.Normal, nil)
+	worker.logger = bslogger.NewLogger(log.Ldate|log.Ltime|log.Lmsgprefix, fmt.Sprintf("Worker %s", worker.myAddress), bslogger.Normal, nil)
 	worker.ServerClient = rpc.NewTcpServerClient(&worker, worker.myAddress, worker.myAddress, settings.CoordinatorAddress, settings.CoordinatorAddress)
 	misc.CheckError(worker.ServerClient.Server.Run(), worker.logger, misc.Fatal)
 

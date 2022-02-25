@@ -1,13 +1,13 @@
 package mandelbrot
 
 import (
-	"DistributedMandelbrot/log"
+	"github.com/BrugadaSyndrome/bslogger"
 	"image/color"
-	glog "log"
+	"log"
 )
 
 type Settings struct {
-	logger log.Logger
+	logger bslogger.Logger
 
 	Boundary                float64
 	CenterX                 float64
@@ -25,7 +25,7 @@ type Settings struct {
 }
 
 func (s *Settings) Verify() error {
-	s.logger = log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "MandelbrotSettings", log.Normal, nil)
+	s.logger = bslogger.NewLogger(log.Ldate|log.Ltime|log.Lmsgprefix, "MandelbrotSettings", bslogger.Normal, nil)
 
 	if s.Boundary <= 0 {
 		s.Boundary = 100

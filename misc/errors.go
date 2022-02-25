@@ -1,6 +1,6 @@
 package misc
 
-import "DistributedMandelbrot/log"
+import "github.com/BrugadaSyndrome/bslogger"
 
 const (
 	Fatal Severity = iota
@@ -18,7 +18,7 @@ func (s Severity) String() string {
 	}[s]
 }
 
-func CheckError(err error, logger log.Logger, severity Severity) {
+func CheckError(err error, logger bslogger.Logger, severity Severity) {
 	if err != nil {
 		switch severity {
 		case Fatal:

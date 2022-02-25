@@ -2,14 +2,14 @@ package main
 
 import (
 	"DistributedMandelbrot/coordinator"
-	"DistributedMandelbrot/log"
 	"DistributedMandelbrot/worker"
 	"flag"
-	glog "log"
+	"github.com/BrugadaSyndrome/bslogger"
+	"log"
 )
 
 var (
-	logger       log.Logger
+	logger       bslogger.Logger
 	mode         string
 	settingsFile string
 	workerCount  uint
@@ -21,7 +21,7 @@ func main() {
 	flag.UintVar(&workerCount, "workers", 2, "Specify the number of workers to create to process coordinator tasks")
 	flag.Parse()
 
-	logger = log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "Main", log.Normal, nil)
+	logger = bslogger.NewLogger(log.Ldate|log.Ltime|log.Lmsgprefix, "Main", bslogger.Normal, nil)
 
 	switch mode {
 	case "coordinator":
@@ -40,7 +40,7 @@ func startCoordinatorMode(settingsFile string) {
 
 	c := coordinator.NewCoordinator(settingsFile)
 
-	c.Server.WG.Wait()
+	c.Server.Wait()
 }
 
 func startWorkerMode(settingsFile string) {
@@ -54,6 +54,6 @@ func startWorkerMode(settingsFile string) {
 	}
 
 	for i := 0; i < 5; i++ {
-		workers[i].ServerClient.Server.WG.Wait()
+		workers[i].ServerClient.Server.Wait()
 	}
 }

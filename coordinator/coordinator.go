@@ -1,18 +1,18 @@
 package coordinator
 
 import (
-	"DistributedMandelbrot/log"
 	"DistributedMandelbrot/mandelbrot"
 	"DistributedMandelbrot/misc"
-	"DistributedMandelbrot/rpc"
 	"DistributedMandelbrot/task"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/BrugadaSyndrome/bslogger"
+	"github.com/BrugadaSyndrome/rpc"
 	gimage "image"
 	"image/jpeg"
-	glog "log"
+	"log"
 	"math"
 	"os"
 	"os/exec"
@@ -27,7 +27,7 @@ type Coordinator struct {
 	images              map[int]imageTask
 	imageCompletedCount uint
 	imageCount          uint
-	logger              log.Logger
+	logger              bslogger.Logger
 	mutex               sync.Mutex
 	name                string
 	pixelCount          uint
@@ -50,7 +50,7 @@ func NewCoordinator(settingsFile string) Coordinator {
 	coordinator := Coordinator{
 		clients:    make(map[string]*rpc.TcpClient),
 		images:     make(map[int]imageTask),
-		logger:     log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "Coordinator", log.Normal, nil),
+		logger:     bslogger.NewLogger(log.Ldate|log.Ltime|log.Lmsgprefix, "Coordinator", bslogger.Normal, nil),
 		pixelCount: settings.MandelbrotSettings.Height * settings.MandelbrotSettings.Width,
 		rectangle: gimage.Rectangle{
 			Min: gimage.Point{
@@ -109,7 +109,7 @@ func NewCoordinator(settingsFile string) Coordinator {
 
 	// Start up the rpc tcp server to allow workers to communicate with the coordinator
 	coordinator.Server = rpc.NewTcpServer(&coordinator, settings.ServerAddress, "CoordinatorServer")
-	misc.CheckError(coordinator.Server.Run(), coordinator.Server.Logger, misc.Fatal)
+	misc.CheckError(coordinator.Server.Run(), coordinator.logger, misc.Fatal)
 
 	// Create directory to store files for this run
 	if _, err := os.Stat(filepath.Join(settings.SavePath, settings.RunName)); os.IsNotExist(err) {
@@ -130,7 +130,7 @@ func NewCoordinator(settingsFile string) Coordinator {
 	// Create a log file to record the run
 	logFile, err := os.Create(filepath.Join(settings.SavePath, settings.RunName, "coordinator.log"))
 	misc.CheckError(err, coordinator.logger, misc.Warning)
-	coordinator.logger = log.NewLogger(glog.Ldate|glog.Ltime|glog.Lmsgprefix, "Coordinator", log.Normal, logFile)
+	coordinator.logger = bslogger.NewLogger(log.Ldate|log.Ltime|log.Lmsgprefix, "Coordinator", bslogger.Normal, logFile)
 
 	go coordinator.tickers()
 	go coordinator.generateTasks()
