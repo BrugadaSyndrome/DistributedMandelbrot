@@ -3,7 +3,6 @@ package mandelbrot
 import (
 	"github.com/BrugadaSyndrome/bslogger"
 	"image/color"
-	"log"
 )
 
 type Settings struct {
@@ -25,7 +24,7 @@ type Settings struct {
 }
 
 func (s *Settings) Verify() error {
-	s.logger = bslogger.NewLogger(log.Ldate|log.Ltime|log.Lmsgprefix, "MandelbrotSettings", bslogger.Normal, nil)
+	s.logger = bslogger.NewLogger("MandelbrotSettings", bslogger.Normal, nil)
 
 	if s.Boundary <= 0 {
 		s.Boundary = 100
@@ -71,7 +70,7 @@ func (s *Settings) Verify() error {
 		s.ShorterSide = s.Width
 	}
 
-	// Smooth coloring wont work with one color
+	// Smooth coloring won't work with one color
 	if len(s.Palette) == 1 && s.SmoothColoring == true {
 		s.SmoothColoring = false
 		s.logger.Infof("Disabling SmoothColoring since the palette only has one color.")

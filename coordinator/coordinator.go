@@ -9,10 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/BrugadaSyndrome/bslogger"
-	"github.com/BrugadaSyndrome/rpc"
+	"github.com/BrugadaSyndrome/multirpc"
 	gimage "image"
 	"image/jpeg"
-	"log"
 	"math"
 	"os"
 	"os/exec"
@@ -22,7 +21,7 @@ import (
 )
 
 type Coordinator struct {
-	clients             map[string]*rpc.TcpClient
+	clients             map[string]*multirpc.TcpClient
 	digitCount          uint // Used to format name of images for ffmpeg
 	images              map[int]imageTask
 	imageCompletedCount uint
@@ -41,16 +40,16 @@ type Coordinator struct {
 	tasksTodo           chan task.Task
 	workerWait          *sync.WaitGroup
 
-	Server rpc.TcpServer
+	Server multirpc.TcpServer
 }
 
 func NewCoordinator(settingsFile string) Coordinator {
 	settings := NewSettings(settingsFile)
 
 	coordinator := Coordinator{
-		clients:    make(map[string]*rpc.TcpClient),
+		clients:    make(map[string]*multirpc.TcpClient),
 		images:     make(map[int]imageTask),
-		logger:     bslogger.NewLogger(log.Ldate|log.Ltime|log.Lmsgprefix, "Coordinator", bslogger.Normal, nil),
+		logger:     bslogger.NewLogger("Coordinator", bslogger.Normal, nil),
 		pixelCount: settings.MandelbrotSettings.Height * settings.MandelbrotSettings.Width,
 		rectangle: gimage.Rectangle{
 			Min: gimage.Point{
@@ -108,7 +107,7 @@ func NewCoordinator(settingsFile string) Coordinator {
 	}
 
 	// Start up the rpc tcp server to allow workers to communicate with the coordinator
-	coordinator.Server = rpc.NewTcpServer(&coordinator, settings.ServerAddress, "CoordinatorServer")
+	coordinator.Server = multirpc.NewTcpServer(&coordinator, settings.ServerAddress, "CoordinatorServer")
 	misc.CheckError(coordinator.Server.Run(), coordinator.logger, misc.Fatal)
 
 	// Create directory to store files for this run
@@ -130,7 +129,7 @@ func NewCoordinator(settingsFile string) Coordinator {
 	// Create a log file to record the run
 	logFile, err := os.Create(filepath.Join(settings.SavePath, settings.RunName, "coordinator.log"))
 	misc.CheckError(err, coordinator.logger, misc.Warning)
-	coordinator.logger = bslogger.NewLogger(log.Ldate|log.Ltime|log.Lmsgprefix, "Coordinator", bslogger.Normal, logFile)
+	coordinator.logger = bslogger.NewLogger("Coordinator", bslogger.Normal, logFile)
 
 	go coordinator.tickers()
 	go coordinator.generateTasks()
@@ -158,7 +157,7 @@ func (c *Coordinator) tickers() {
 
 					// Remove worker from pool
 					var nothing misc.Nothing
-					misc.CheckError(c.DeRegisterWorker(v.Name, &nothing), c.logger, misc.Warning)
+					misc.CheckError(c.DeRegisterWorker(v.Name(), &nothing), c.logger, misc.Warning)
 				}
 			}
 
@@ -188,7 +187,7 @@ func (c *Coordinator) generateTasks() {
 		var currentFrame uint
 		for currentFrame = 1; currentFrame <= transition.FrameCount; currentFrame++ {
 
-			// Lerp through the coordinates in the transition
+			// Linear interpolation through the coordinates in the transition
 			t := float64(currentFrame) / float64(transition.FrameCount)
 
 			// zooming out
@@ -326,7 +325,7 @@ func (c *Coordinator) generateMovie() {
 
 func (c *Coordinator) RegisterWorker(workerServerAddress string, reply *misc.Nothing) error {
 	// Create a client to communicate with this worker
-	client := rpc.NewTcpClient(workerServerAddress, workerServerAddress)
+	client := multirpc.NewTcpClient(workerServerAddress, workerServerAddress)
 	c.mutex.Lock()
 	c.clients[workerServerAddress] = &client
 	// Track all tasks this worker checks out

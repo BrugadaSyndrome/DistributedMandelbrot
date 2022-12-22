@@ -1,4 +1,4 @@
-github.com/BrugadaSyndrome/bslogger v0.1.0 h1:ktkKYqeTj9n2H+fdAtXo4833HrP4EKcH0kBfjbL4BJ4=
-github.com/BrugadaSyndrome/bslogger v0.1.0/go.mod h1:KnOGKy7VXtz3YsxgcayL/Nbi+8ATCXWgtYLv3tfhHho=
-github.com/BrugadaSyndrome/rpc v0.1.0 h1:7LfQ+yeianVH6+6LprSjyQg+5+gijGYcKw0LRJZ4i2k=
-github.com/BrugadaSyndrome/rpc v0.1.0/go.mod h1:YQynTNL3KpmiQnO1+5cC9XXVTKTWEqC+sJrorPFzeAY=
+github.com/BrugadaSyndrome/bslogger v0.2.2 h1:8OyjPVSPX+FyzrMlRbcBuAX5u3BBOZf3RqcHC3R0pIA=
+github.com/BrugadaSyndrome/bslogger v0.2.2/go.mod h1:KJ9xJ+2t8HLowqAsxeXmk0QPkg3wCgY2AsCHj0b8tu8=
+github.com/BrugadaSyndrome/multirpc v0.3.1 h1:OlynfDXkF56x1SNWzqdvTmk/EGf4JRqTNSGtKJZO+I0=
+github.com/BrugadaSyndrome/multirpc v0.3.1/go.mod h1:omE1cI4VCVe9ZsqOKDNDEw8vgA3p9DjTwtCQuosddvM=

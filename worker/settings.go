@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/BrugadaSyndrome/bslogger"
-	"log"
 )
 
 type settings struct {
@@ -16,7 +15,7 @@ type settings struct {
 
 func NewSettings(settingsFile string) settings {
 	s := settings{
-		logger: bslogger.NewLogger(log.Ldate|log.Ltime|log.Lmsgprefix, "WorkerSettings", bslogger.Normal, nil),
+		logger: bslogger.NewLogger("WorkerSettings", bslogger.Normal, nil),
 	}
 	err, bytes := misc.ReadFile(settingsFile)
 	misc.CheckError(err, s.logger, misc.Fatal)

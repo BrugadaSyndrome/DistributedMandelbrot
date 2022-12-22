@@ -2,7 +2,6 @@ package misc
 
 import (
 	"github.com/BrugadaSyndrome/bslogger"
-	"log"
 	"net"
 )
 
@@ -28,7 +27,7 @@ func GetFreePort() (int, error) {
 }
 func GetLocalAddress() string {
 	var localAddress string
-	logger := bslogger.NewLogger(log.Ldate|log.Ltime|log.Lmsgprefix, "", bslogger.Normal, nil)
+	logger := bslogger.NewLogger("", bslogger.Normal, nil)
 
 	networkInterfaces, err := net.Interfaces()
 	if err != nil {
@@ -44,8 +43,8 @@ func GetLocalAddress() string {
 			}
 
 			for _, addr := range address {
-				if ipnet, ok := addr.(*net.IPNet); ok {
-					if ip4 := ipnet.IP.To4(); len(ip4) == net.IPv4len {
+				if ip, ok := addr.(*net.IPNet); ok {
+					if ip4 := ip.IP.To4(); len(ip4) == net.IPv4len {
 						localAddress = ip4.String()
 						break
 					}

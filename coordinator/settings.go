@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/BrugadaSyndrome/bslogger"
-	"log"
 	"os"
 	"os/exec"
 	"time"
@@ -28,7 +27,7 @@ type settings struct {
 
 func NewSettings(settingsFile string) settings {
 	s := settings{
-		logger:        bslogger.NewLogger(log.Ldate|log.Ltime|log.Lmsgprefix, "CoordinatorSettings", bslogger.Normal, nil),
+		logger:        bslogger.NewLogger("CoordinatorSettings", bslogger.Normal, nil),
 		ServerAddress: "",
 	}
 	err, fileBytes := misc.ReadFile(settingsFile)
@@ -76,7 +75,7 @@ func (s *settings) Verify() error {
 		misc.CheckError(s.TransitionSettings[i].Verify(), s.logger, misc.Warning)
 	}
 
-	// If generate movie is set to true, verify ffmpeg is setup
+	// If generate movie is set to true, verify ffmpeg is set up
 	if s.GenerateMovie {
 		cmd := exec.Command("ffmpeg")
 		var stderr bytes.Buffer

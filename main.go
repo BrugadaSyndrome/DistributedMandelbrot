@@ -5,7 +5,6 @@ import (
 	"DistributedMandelbrot/worker"
 	"flag"
 	"github.com/BrugadaSyndrome/bslogger"
-	"log"
 )
 
 var (
@@ -21,7 +20,7 @@ func main() {
 	flag.UintVar(&workerCount, "workers", 2, "Specify the number of workers to create to process coordinator tasks")
 	flag.Parse()
 
-	logger = bslogger.NewLogger(log.Ldate|log.Ltime|log.Lmsgprefix, "Main", bslogger.Normal, nil)
+	logger = bslogger.NewLogger("Main", bslogger.Normal, nil)
 
 	switch mode {
 	case "coordinator":

@@ -122,7 +122,7 @@ func (m *Mandelbrot) ConvertPixelCoordinateToComplexCoordinate(c task.Coordinate
 	/*
 	 * Convert the (column, row) point on the image to the (x, y) point on the complex axis
 	 *
-	 * - Pixels are indexed from top left to bottom right so we need adjust the pixel to the left by half the width and
+	 * - Pixels are indexed from top left to bottom right, so we need adjust the pixel to the left by half the width and
 	 *   half the height to 'center' to get the real location. This is the numerator portion of the formula.
 	 * - To maintain proportions of the image (since most images are wider then they are high) we need to divide by the
 	 *   shorter side of the image (mind the off by one)
