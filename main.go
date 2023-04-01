@@ -45,14 +45,14 @@ func startCoordinatorMode(settingsFile string) {
 func startWorkerMode(settingsFile string) {
 	logger.Info("Started Worker Mode")
 
-	workers := make([]*worker.Worker, 0)
+	workers := make([]*worker.Worker, workerCount)
 	var i uint
 	for i = 0; i < workerCount; i++ {
 		w := worker.NewWorker(settingsFile)
-		workers = append(workers, &w)
+		workers[i] = &w
 	}
 
-	for i := 0; i < 5; i++ {
+	for i = 0; i < workerCount; i++ {
 		workers[i].ServerClient.Server.Wait()
 	}
 }
