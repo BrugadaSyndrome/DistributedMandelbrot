@@ -56,7 +56,7 @@ func (s *settings) Verify() error {
 	if s.ServerAddress == "" {
 		s.ServerAddress = fmt.Sprintf("%s:%s", misc.GetLocalAddress(), "51000")
 	}
-	if s.TaskGeneration < task.Row || s.TaskGeneration > task.Image {
+	if s.TaskGeneration < task.Row || s.TaskGeneration > task.Grid {
 		s.TaskGeneration = task.Row
 	}
 	if len(s.TransitionSettings) == 0 {

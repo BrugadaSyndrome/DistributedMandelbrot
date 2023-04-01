@@ -5,11 +5,11 @@ import (
 	"fmt"
 )
 
-// todo: add a grid option
 const (
 	Row Generation = iota
 	Column
 	Image
+	Grid
 )
 
 type Generation int
@@ -81,6 +81,22 @@ func (t *Task) AddTasksForImage(centerX float64, centerY float64, magnification 
 	var r, c uint
 	for r = 0; r < imageHeight; r++ {
 		for c = 0; c < imageWidth; c++ {
+			coordinate := Coordinate{
+				CenterX:       centerX,
+				CenterY:       centerY,
+				Column:        c,
+				Magnification: magnification,
+				Row:           r,
+			}
+			t.AddTaskForPixel(coordinate)
+		}
+	}
+}
+
+func (t *Task) AddTasksForImageByGrid(centerX float64, centerY float64, magnification float64, imageHeight uint, imageWidth uint, percentage uint, gridRow uint, gridColumn uint) {
+	var r, c uint
+	for r = (imageHeight / percentage) * gridRow; r < imageHeight/percentage; r++ {
+		for c = (imageWidth / percentage) * gridColumn; c < imageWidth/percentage; c++ {
 			coordinate := Coordinate{
 				CenterX:       centerX,
 				CenterY:       centerY,

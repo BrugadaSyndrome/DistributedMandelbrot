@@ -101,6 +101,8 @@ func NewCoordinator(settingsFile string) Coordinator {
 		coordinator.taskCount = settings.MandelbrotSettings.Width * coordinator.imageCount
 	case task.Image:
 		coordinator.taskCount = coordinator.imageCount
+	case task.Grid:
+		coordinator.taskCount = (settings.MandelbrotSettings.Height / 10) * (settings.MandelbrotSettings.Width / 10) * coordinator.imageCount
 	default:
 		coordinator.logger.Fatalf("Unknown generation type: %d", coordinator.settings.TaskGeneration)
 		break
@@ -177,7 +179,6 @@ func (c *Coordinator) generateTasks() {
 	var startTime = time.Now()
 
 	for transitionStep := 0; transitionStep < len(c.settings.TransitionSettings); transitionStep++ {
-
 		// generate each image for this transition while zooming in exponentially
 		transition := c.settings.TransitionSettings[transitionStep]
 		magnification := transition.MagnificationStart
@@ -186,7 +187,6 @@ func (c *Coordinator) generateTasks() {
 
 		var currentFrame uint
 		for currentFrame = 1; currentFrame <= transition.FrameCount; currentFrame++ {
-
 			// Linear interpolation through the coordinates in the transition
 			t := float64(currentFrame) / float64(transition.FrameCount)
 
@@ -219,6 +219,17 @@ func (c *Coordinator) generateTasks() {
 				taskTodo.AddTasksForImage(currentX, currentY, magnification, c.settings.MandelbrotSettings.Height, c.settings.MandelbrotSettings.Width)
 				c.tasksTodo <- taskTodo
 				c.taskGeneratedCount++
+			case task.Grid:
+				var percentage, gridRow, gridColumn uint
+				percentage = 10
+				for gridRow = 1; gridRow <= percentage; gridRow++ {
+					for gridColumn = 1; gridColumn <= percentage; gridColumn++ {
+						taskTodo := task.NewTask(c.taskGeneratedCount, imageNumber)
+						taskTodo.AddTasksForImageByGrid(currentX, currentY, magnification, c.settings.MandelbrotSettings.Height, c.settings.MandelbrotSettings.Width, percentage, gridRow, gridColumn)
+						c.tasksTodo <- taskTodo
+						c.taskGeneratedCount++
+					}
+				}
 			default:
 				c.logger.Fatalf("Unknown generation type: %d", c.settings.TaskGeneration)
 				break
@@ -238,7 +249,7 @@ func (c *Coordinator) generateTasks() {
 	elapsedTime = time.Since(startTime)
 	close(c.tasksTodo)
 
-	c.logger.Debugf("Done generating %d tasks in %s", c.taskGeneratedCount, elapsedTime)
+	c.logger.Infof("Done generating %d tasks in %s", c.taskGeneratedCount, elapsedTime.Round(time.Second).String())
 }
 
 func (c *Coordinator) ingestTasks() {
@@ -300,7 +311,7 @@ func (c *Coordinator) ingestTasks() {
 
 	elapsedTime = time.Since(startTime)
 	close(c.tasksDone)
-	c.logger.Debugf("Done ingesting %d tasks in %s", c.taskIngestedCount, elapsedTime)
+	c.logger.Infof("Done ingesting %d tasks in %s", c.taskIngestedCount, elapsedTime.Round(time.Second).String())
 
 	c.logger.Infof("Waiting for %d workers to disconnect", len(c.clients))
 	c.workerWait.Wait()
@@ -340,18 +351,15 @@ func (c *Coordinator) RegisterWorker(workerServerAddress string, reply *misc.Not
 }
 
 func (c *Coordinator) DeRegisterWorker(workerServerAddress string, reply *misc.Nothing) error {
-	// Put tasks  this worker has not returned yet back into the tasksTodo pool
-	go func(tasks map[uint]task.Task) {
-		for _, v := range tasks {
-			c.tasksTodo <- v
-		}
-	}(c.tasksHandedOut[workerServerAddress])
-
 	// Disconnect from worker
 	misc.CheckError(c.clients[workerServerAddress].Disconnect(), c.logger, misc.Warning)
 
-	// Remove stored values associated with this worker
 	c.mutex.Lock()
+	// Put tasks this worker has not returned yet back into the tasksTodo pool
+	for _, task := range c.tasksHandedOut[workerServerAddress] {
+		c.tasksTodo <- task
+	}
+	// Remove stored values associated with this worker
 	delete(c.tasksHandedOut, workerServerAddress)
 	delete(c.clients, workerServerAddress)
 	c.mutex.Unlock()
@@ -371,7 +379,7 @@ func (c *Coordinator) GetTask(workerAddress string, task *task.Task) error {
 	todo, more := <-c.tasksTodo
 	if !more {
 		task = nil
-		c.logger.Info("Telling worker that all tasks are handed out")
+		c.logger.Infof("Telling worker %s that all tasks are handed out", workerAddress)
 		return errors.New("all tasks handed out")
 	}
 	c.mutex.Lock()
