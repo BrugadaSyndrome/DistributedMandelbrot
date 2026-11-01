@@ -1,5 +1,5 @@
 *.exe
 /.idea
 /.vagrant
-mandelbrot
+/mandelbrot
 run_*

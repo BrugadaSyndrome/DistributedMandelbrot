@@ -12,11 +12,14 @@ const (
 	Grid
 )
 
+// GridDivisions is the number of cells per side when using Grid task generation
+const GridDivisions uint = 10
+
 type Generation int
 
 func (g Generation) String() string {
 	return []string{
-		"Row", "Column", "Image",
+		"Row", "Column", "Image", "Grid",
 	}[g]
 }
 
@@ -93,10 +96,24 @@ func (t *Task) AddTasksForImage(centerX float64, centerY float64, magnification 
 	}
 }
 
-func (t *Task) AddTasksForImageByGrid(centerX float64, centerY float64, magnification float64, imageHeight uint, imageWidth uint, percentage uint, gridRow uint, gridColumn uint) {
+// AddTasksForImageByGrid
+// Adds the pixels for one cell of an image split into a GridDivisions x GridDivisions grid. gridRow and gridColumn are
+// zero based. The last row and column of cells absorb any remainder so every pixel is covered exactly once.
+func (t *Task) AddTasksForImageByGrid(centerX float64, centerY float64, magnification float64, imageHeight uint, imageWidth uint, gridRow uint, gridColumn uint) {
+	cellHeight := imageHeight / GridDivisions
+	cellWidth := imageWidth / GridDivisions
+	rowStart, rowEnd := cellHeight*gridRow, cellHeight*(gridRow+1)
+	columnStart, columnEnd := cellWidth*gridColumn, cellWidth*(gridColumn+1)
+	if gridRow == GridDivisions-1 {
+		rowEnd = imageHeight
+	}
+	if gridColumn == GridDivisions-1 {
+		columnEnd = imageWidth
+	}
+
 	var r, c uint
-	for r = (imageHeight / percentage) * gridRow; r < imageHeight/percentage; r++ {
-		for c = (imageWidth / percentage) * gridColumn; c < imageWidth/percentage; c++ {
+	for r = rowStart; r < rowEnd; r++ {
+		for c = columnStart; c < columnEnd; c++ {
 			coordinate := Coordinate{
 				CenterX:       centerX,
 				CenterY:       centerY,

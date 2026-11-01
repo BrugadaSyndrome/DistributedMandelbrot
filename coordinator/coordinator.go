@@ -8,8 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/BrugadaSyndrome/bslogger"
-	"github.com/BrugadaSyndrome/multirpc"
 	gimage "image"
 	"image/jpeg"
 	"math"
@@ -18,6 +16,9 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/BrugadaSyndrome/bslogger"
+	"github.com/BrugadaSyndrome/multirpc"
 )
 
 type Coordinator struct {
@@ -43,10 +44,10 @@ type Coordinator struct {
 	Server multirpc.TcpServer
 }
 
-func NewCoordinator(settingsFile string) Coordinator {
+func NewCoordinator(settingsFile string) *Coordinator {
 	settings := NewSettings(settingsFile)
 
-	coordinator := Coordinator{
+	coordinator := &Coordinator{
 		clients:    make(map[string]*multirpc.TcpClient),
 		images:     make(map[int]imageTask),
 		logger:     bslogger.NewLogger("Coordinator", bslogger.Normal, nil),
@@ -102,14 +103,14 @@ func NewCoordinator(settingsFile string) Coordinator {
 	case task.Image:
 		coordinator.taskCount = coordinator.imageCount
 	case task.Grid:
-		coordinator.taskCount = (settings.MandelbrotSettings.Height / 10) * (settings.MandelbrotSettings.Width / 10) * coordinator.imageCount
+		coordinator.taskCount = task.GridDivisions * task.GridDivisions * coordinator.imageCount
 	default:
 		coordinator.logger.Fatalf("Unknown generation type: %d", coordinator.settings.TaskGeneration)
 		break
 	}
 
 	// Start up the rpc tcp server to allow workers to communicate with the coordinator
-	coordinator.Server = multirpc.NewTcpServer(&coordinator, settings.ServerAddress, "CoordinatorServer")
+	coordinator.Server = multirpc.NewTcpServer(coordinator, settings.ServerAddress, "CoordinatorServer")
 	misc.CheckError(coordinator.Server.Run(), coordinator.logger, misc.Fatal)
 
 	// Create directory to store files for this run
@@ -154,7 +155,7 @@ func (c *Coordinator) tickers() {
 				err := v.Call("Worker.RollCall", junk, &reply)
 				if err != nil {
 					// Cannot communicate with the worker
-					c.logger.Warningf("Worker %s missed roll call: %s", v.Name, err)
+					c.logger.Warningf("Worker %s missed roll call: %s", v.Name(), err)
 					misc.CheckError(v.Disconnect(), c.logger, misc.Warning)
 
 					// Remove worker from pool
@@ -220,12 +221,11 @@ func (c *Coordinator) generateTasks() {
 				c.tasksTodo <- taskTodo
 				c.taskGeneratedCount++
 			case task.Grid:
-				var percentage, gridRow, gridColumn uint
-				percentage = 10
-				for gridRow = 1; gridRow <= percentage; gridRow++ {
-					for gridColumn = 1; gridColumn <= percentage; gridColumn++ {
+				var gridRow, gridColumn uint
+				for gridRow = range task.GridDivisions {
+					for gridColumn = range task.GridDivisions {
 						taskTodo := task.NewTask(c.taskGeneratedCount, imageNumber)
-						taskTodo.AddTasksForImageByGrid(currentX, currentY, magnification, c.settings.MandelbrotSettings.Height, c.settings.MandelbrotSettings.Width, percentage, gridRow, gridColumn)
+						taskTodo.AddTasksForImageByGrid(currentX, currentY, magnification, c.settings.MandelbrotSettings.Height, c.settings.MandelbrotSettings.Width, gridRow, gridColumn)
 						c.tasksTodo <- taskTodo
 						c.taskGeneratedCount++
 					}
@@ -356,8 +356,8 @@ func (c *Coordinator) DeRegisterWorker(workerServerAddress string, reply *misc.N
 
 	c.mutex.Lock()
 	// Put tasks this worker has not returned yet back into the tasksTodo pool
-	for _, task := range c.tasksHandedOut[workerServerAddress] {
-		c.tasksTodo <- task
+	for _, todo := range c.tasksHandedOut[workerServerAddress] {
+		c.tasksTodo <- todo
 	}
 	// Remove stored values associated with this worker
 	delete(c.tasksHandedOut, workerServerAddress)
