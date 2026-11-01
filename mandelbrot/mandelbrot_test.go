@@ -130,41 +130,38 @@ func TestConvertPixelCoordinateToComplexCoordinate(t *testing.T) {
 		s.Width = 200
 		s.Height = 101
 	})
-	coordinate := task.Coordinate{CenterX: -0.5, CenterY: 0.25, Magnification: 2, Column: 100, Row: 50}
+	frame := task.Frame{CenterX: -0.5, CenterY: 0.25, Magnification: 2}
+	const column, row = 100, 50
 	// One pixel step in the complex plane: 1 / (magnification * (shorterSide - 1))
 	step := 1 / (2.0 * 100)
 
 	t.Run("image center maps to the center point", func(t *testing.T) {
-		x, y := m.ConvertPixelCoordinateToComplexCoordinate(coordinate, 0, 0)
+		x, y := m.ConvertPixelCoordinateToComplexCoordinate(frame, column, row, 0, 0)
 		if !almostEqual(x, -0.5) || !almostEqual(y, 0.25-0.5*step) {
 			t.Errorf("got (%v, %v), want (%v, %v)", x, y, -0.5, 0.25-0.5*step)
 		}
 	})
 
 	t.Run("moving one pixel moves one step", func(t *testing.T) {
-		x0, y0 := m.ConvertPixelCoordinateToComplexCoordinate(coordinate, 0, 0)
-		next := coordinate
-		next.Column++
-		next.Row++
-		x1, y1 := m.ConvertPixelCoordinateToComplexCoordinate(next, 0, 0)
+		x0, y0 := m.ConvertPixelCoordinateToComplexCoordinate(frame, column, row, 0, 0)
+		x1, y1 := m.ConvertPixelCoordinateToComplexCoordinate(frame, column+1, row+1, 0, 0)
 		if !almostEqual(x1-x0, step) || !almostEqual(y1-y0, step) {
 			t.Errorf("step = (%v, %v), want (%v, %v)", x1-x0, y1-y0, step, step)
 		}
 	})
 
 	t.Run("doubling magnification halves the step", func(t *testing.T) {
-		zoomed := coordinate
+		zoomed := frame
 		zoomed.Magnification = 4
-		zoomed.Column = 101
-		x, _ := m.ConvertPixelCoordinateToComplexCoordinate(zoomed, 0, 0)
+		x, _ := m.ConvertPixelCoordinateToComplexCoordinate(zoomed, column+1, row, 0, 0)
 		if !almostEqual(x-(-0.5), step/2) {
 			t.Errorf("step = %v, want %v", x-(-0.5), step/2)
 		}
 	})
 
 	t.Run("offsets move x right and y up", func(t *testing.T) {
-		x0, y0 := m.ConvertPixelCoordinateToComplexCoordinate(coordinate, 0, 0)
-		x1, y1 := m.ConvertPixelCoordinateToComplexCoordinate(coordinate, 0.5, 0.5)
+		x0, y0 := m.ConvertPixelCoordinateToComplexCoordinate(frame, column, row, 0, 0)
+		x1, y1 := m.ConvertPixelCoordinateToComplexCoordinate(frame, column, row, 0.5, 0.5)
 		if !almostEqual(x1-x0, step/2) || !almostEqual(y1-y0, -step/2) {
 			t.Errorf("offset delta = (%v, %v), want (%v, %v)", x1-x0, y1-y0, step/2, -step/2)
 		}
@@ -172,12 +169,13 @@ func TestConvertPixelCoordinateToComplexCoordinate(t *testing.T) {
 }
 
 func TestGetPointsToCalculate(t *testing.T) {
-	coordinate := task.Coordinate{CenterX: -0.5, Magnification: 1, Column: 10, Row: 20}
+	frame := task.Frame{CenterX: -0.5, Magnification: 1}
+	const column, row = 10, 20
 
 	t.Run("no super sampling returns the pixel point", func(t *testing.T) {
 		m := newTestMandelbrot(t, nil)
-		points := m.GetPointsToCalculate(coordinate)
-		x, y := m.ConvertPixelCoordinateToComplexCoordinate(coordinate, 0, 0)
+		points := m.GetPointsToCalculate(frame, column, row)
+		x, y := m.ConvertPixelCoordinateToComplexCoordinate(frame, column, row, 0, 0)
 		if len(points) != 1 || points[0] != (Point{X: x, Y: y}) {
 			t.Errorf("got %v, want [{%v %v}]", points, x, y)
 		}
@@ -185,7 +183,7 @@ func TestGetPointsToCalculate(t *testing.T) {
 
 	t.Run("grid super sampling is centered on the pixel", func(t *testing.T) {
 		m := newTestMandelbrot(t, func(s *Settings) { s.SuperSampling = 3 })
-		points := m.GetPointsToCalculate(coordinate)
+		points := m.GetPointsToCalculate(frame, column, row)
 		if len(points) != 9 {
 			t.Fatalf("got %d points, want 9", len(points))
 		}
@@ -199,7 +197,7 @@ func TestGetPointsToCalculate(t *testing.T) {
 		if len(seen) != 9 {
 			t.Errorf("got %d distinct points, want 9", len(seen))
 		}
-		x, y := m.ConvertPixelCoordinateToComplexCoordinate(coordinate, 0, 0)
+		x, y := m.ConvertPixelCoordinateToComplexCoordinate(frame, column, row, 0, 0)
 		if !almostEqual(sumX/9, x) || !almostEqual(sumY/9, y) {
 			t.Errorf("mean = (%v, %v), want (%v, %v)", sumX/9, sumY/9, x, y)
 		}

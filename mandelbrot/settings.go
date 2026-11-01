@@ -1,8 +1,9 @@
 package mandelbrot
 
 import (
-	"github.com/BrugadaSyndrome/bslogger"
 	"image/color"
+
+	"github.com/BrugadaSyndrome/bslogger"
 )
 
 type Settings struct {
@@ -65,10 +66,7 @@ func (s *Settings) Verify() error {
 	}
 
 	// Need to determine the shorter side of the image to preserve the correct scale
-	s.ShorterSide = s.Height
-	if s.Height > s.Width {
-		s.ShorterSide = s.Width
-	}
+	s.ShorterSide = min(s.Height, s.Width)
 
 	// Smooth coloring won't work with one color
 	if len(s.Palette) == 1 && s.SmoothColoring == true {

@@ -50,7 +50,8 @@ func NewWorker(settingsFile string) *Worker {
 	// Register with the coordinator
 	misc.CheckError(worker.ServerClient.Client.Connect(), worker.logger, misc.Fatal)
 	var nothing misc.Nothing
-	err = worker.ServerClient.Client.Call("Coordinator.RegisterWorker", worker.myAddress, &nothing)
+	registration := task.Registration{Address: worker.myAddress, ProtocolVersion: task.ProtocolVersion}
+	err = worker.ServerClient.Client.Call("Coordinator.RegisterWorker", registration, &nothing)
 	if err != nil && err.Error() == task.NoMoreTasksMessage {
 		// The run finished before this worker joined. Stop quietly rather than exiting the process, which would also
 		// stop any other workers in it before they deregister.
@@ -124,24 +125,7 @@ func (w *Worker) processTasks() {
 			break
 		}
 
-		for {
-			// Process each coordinate given
-			coordinate, err := taskTodo.GetNextTask()
-			if err != nil {
-				break
-			}
-
-			points := w.mandelbrot.GetPointsToCalculate(coordinate)
-			iterations := w.mandelbrot.EscapeTimeMultiple(points)
-			color := w.mandelbrot.GetColorMultiple(iterations)
-
-			pixel := task.Pixel{
-				Color:  color,
-				Column: coordinate.Column,
-				Row:    coordinate.Row,
-			}
-			taskTodo.AddResult(pixel)
-		}
+		w.render(&taskTodo)
 
 		err = w.ServerClient.Client.Call("Coordinator.ReturnTask", taskTodo, &nothing)
 		if err != nil {
@@ -159,6 +143,19 @@ func (w *Worker) processTasks() {
 	w.logger.Info("Shutting down")
 	misc.CheckError(w.ServerClient.Client.Call("Coordinator.DeRegisterWorker", w.myAddress, &nothing), w.logger, misc.Warning)
 	w.shutdown()
+}
+
+// render computes the color of every pixel in the task's bounds and stores them in Pixels as packed RGBA, row by row
+func (w *Worker) render(t *task.Task) {
+	t.Pixels = make([]byte, 0, t.ResultSize())
+	for row := t.Bounds.Min.Y; row < t.Bounds.Max.Y; row++ {
+		for column := t.Bounds.Min.X; column < t.Bounds.Max.X; column++ {
+			points := w.mandelbrot.GetPointsToCalculate(t.Frame, column, row)
+			iterations := w.mandelbrot.EscapeTimeMultiple(points)
+			color := w.mandelbrot.GetColorMultiple(iterations)
+			t.Pixels = append(t.Pixels, color.R, color.G, color.B, color.A)
+		}
+	}
 }
 
 // shutdown disconnects from the coordinator and stops this worker's RPC server. Both the roll call ticker and

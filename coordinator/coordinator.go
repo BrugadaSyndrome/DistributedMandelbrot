@@ -37,6 +37,7 @@ type Coordinator struct {
 	name           string
 	pixelCount     uint
 	rectangle      gimage.Rectangle
+	regions        []gimage.Rectangle // how each frame is split into tasks; set by planTasks
 	settings       settings
 	taskCount      uint
 	tasksHandedOut map[string]map[uint]task.Task // keep track of all tasks workers have
@@ -79,29 +80,7 @@ func NewCoordinator(settingsFile string) *Coordinator {
 	}
 	misc.CheckError(settings.Verify(), coordinator.logger, misc.Fatal)
 
-	// Determine the number of images that will be generated for each transition (see transitionSettings.frameCount)
-	for i := range settings.TransitionSettings {
-		settings.TransitionSettings[i].FrameCount = settings.TransitionSettings[i].frameCount()
-		coordinator.imageCount += settings.TransitionSettings[i].FrameCount
-	}
-
-	// ffmpeg needs the images named in a certain way
-	coordinator.digitCount = (uint)(math.Log10((float64)(coordinator.imageCount)) + 1)
-
-	// Determine the number of tasks that will be generated so the coordinator knows when to shut down
-	switch settings.TaskGeneration {
-	case task.Row:
-		coordinator.taskCount = settings.MandelbrotSettings.Height * coordinator.imageCount
-	case task.Column:
-		coordinator.taskCount = settings.MandelbrotSettings.Width * coordinator.imageCount
-	case task.Image:
-		coordinator.taskCount = coordinator.imageCount
-	case task.Grid:
-		coordinator.taskCount = task.GridDivisions * task.GridDivisions * coordinator.imageCount
-	default:
-		coordinator.logger.Fatalf("Unknown generation type: %d", coordinator.settings.TaskGeneration)
-		break
-	}
+	misc.CheckError(coordinator.planTasks(), coordinator.logger, misc.Fatal)
 
 	// Create directory to store files for this run
 	if _, err := os.Stat(filepath.Join(settings.SavePath, settings.RunName)); os.IsNotExist(err) {
@@ -186,38 +165,10 @@ func (c *Coordinator) generateTasks() {
 
 		for currentFrame := range transition.FrameCount {
 			currentX, currentY, magnification := transition.frame(currentFrame)
+			frame := task.Frame{CenterX: currentX, CenterY: currentY, Magnification: magnification}
 
-			switch c.settings.TaskGeneration {
-			case task.Row:
-				var row uint
-				for row = 0; row < c.settings.MandelbrotSettings.Height; row++ {
-					taskTodo := c.newTask(imageNumber)
-					taskTodo.AddTasksForRow(currentX, currentY, magnification, row, c.settings.MandelbrotSettings.Width)
-					c.tasksTodo <- taskTodo
-				}
-			case task.Column:
-				var column uint
-				for column = 0; column < c.settings.MandelbrotSettings.Width; column++ {
-					taskTodo := c.newTask(imageNumber)
-					taskTodo.AddTasksForColumn(currentX, currentY, magnification, c.settings.MandelbrotSettings.Height, column)
-					c.tasksTodo <- taskTodo
-				}
-			case task.Image:
-				taskTodo := c.newTask(imageNumber)
-				taskTodo.AddTasksForImage(currentX, currentY, magnification, c.settings.MandelbrotSettings.Height, c.settings.MandelbrotSettings.Width)
-				c.tasksTodo <- taskTodo
-			case task.Grid:
-				var gridRow, gridColumn uint
-				for gridRow = range task.GridDivisions {
-					for gridColumn = range task.GridDivisions {
-						taskTodo := c.newTask(imageNumber)
-						taskTodo.AddTasksForImageByGrid(currentX, currentY, magnification, c.settings.MandelbrotSettings.Height, c.settings.MandelbrotSettings.Width, gridRow, gridColumn)
-						c.tasksTodo <- taskTodo
-					}
-				}
-			default:
-				c.logger.Fatalf("Unknown generation type: %d", c.settings.TaskGeneration)
-				break
+			for _, region := range c.regions {
+				c.tasksTodo <- c.newTask(imageNumber, frame, region)
 			}
 
 			imageNumber++
@@ -261,7 +212,8 @@ func (c *Coordinator) ingestTasks() {
 }
 
 // ingestTask records a finished task's pixels on its image and saves the image once every pixel has arrived. It must
-// only be called from the ingestTasks goroutine, which owns the images map, so no locking is needed.
+// only be called from the ingestTasks goroutine, which owns the images map, so no locking is needed. ReturnTask has
+// already checked that Pixels holds exactly one color per pixel of Bounds.
 func (c *Coordinator) ingestTask(taskReceived task.Task) {
 	c.taskIngestedCount.Add(1)
 	imageNumber := int(taskReceived.ImageNumber)
@@ -275,11 +227,16 @@ func (c *Coordinator) ingestTask(taskReceived task.Task) {
 		}
 	}
 
-	// Record the pixels on the image and decrement the amount of pixels left to be recorded
-	for _, result := range taskReceived.Results {
-		image.Image.SetRGBA(int(result.Column), int(result.Row), result.Color)
+	// Copy the pixels onto the image one row at a time; Pixels uses the same packed RGBA layout as image.Pix and
+	// decrement the amount of pixels left to be recorded
+	bounds := taskReceived.Bounds
+	rowBytes := bounds.Dx() * task.BytesPerPixel
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		destination := image.Image.PixOffset(bounds.Min.X, y)
+		source := (y - bounds.Min.Y) * rowBytes
+		copy(image.Image.Pix[destination:destination+rowBytes], taskReceived.Pixels[source:source+rowBytes])
 	}
-	image.PixelsLeft -= uint(len(taskReceived.Results))
+	image.PixelsLeft -= uint(taskReceived.PixelCount())
 
 	if image.PixelsLeft > 0 {
 		c.images[imageNumber] = image
@@ -315,9 +272,30 @@ func (c *Coordinator) status() string {
 }
 
 // newTask creates a task with the next ID. Only generateTasks creates tasks, but the count is also read by status.
-func (c *Coordinator) newTask(imageNumber uint) task.Task {
+func (c *Coordinator) newTask(imageNumber uint, frame task.Frame, bounds gimage.Rectangle) task.Task {
 	id := c.taskGeneratedCount.Add(1) - 1
-	return task.NewTask(uint(id), imageNumber)
+	return task.NewTask(uint(id), imageNumber, frame, bounds)
+}
+
+// planTasks works out how many frames each transition has, how each frame is split into task regions, and the total
+// number of tasks. The coordinator shuts down once that many tasks are ingested, so the count comes from the same
+// regions generateTasks uses and cannot drift from what is actually generated.
+func (c *Coordinator) planTasks() error {
+	c.imageCount = 0
+	for i := range c.settings.TransitionSettings {
+		c.settings.TransitionSettings[i].FrameCount = c.settings.TransitionSettings[i].frameCount()
+		c.imageCount += c.settings.TransitionSettings[i].FrameCount
+	}
+
+	// ffmpeg needs the images named in a certain way
+	c.digitCount = uint(math.Log10(float64(c.imageCount)) + 1)
+
+	c.regions = task.Regions(c.settings.TaskGeneration, c.settings.MandelbrotSettings.Width, c.settings.MandelbrotSettings.Height)
+	if len(c.regions) == 0 {
+		return fmt.Errorf("unknown generation type: %d", c.settings.TaskGeneration)
+	}
+	c.taskCount = uint(len(c.regions)) * c.imageCount
+	return nil
 }
 
 func (c *Coordinator) generateMovie() {
@@ -330,7 +308,13 @@ func (c *Coordinator) generateMovie() {
 	c.logger.Info("Done making movie")
 }
 
-func (c *Coordinator) RegisterWorker(workerServerAddress string, reply *misc.Nothing) error {
+func (c *Coordinator) RegisterWorker(registration task.Registration, reply *misc.Nothing) error {
+	workerServerAddress := registration.Address
+	if registration.ProtocolVersion != task.ProtocolVersion {
+		return fmt.Errorf("worker %s uses protocol version %d but the coordinator uses version %d; run the same build on both",
+			workerServerAddress, registration.ProtocolVersion, task.ProtocolVersion)
+	}
+
 	// Create a client to communicate with this worker
 	client := multirpc.NewTcpClient(workerServerAddress, workerServerAddress)
 	c.mutex.Lock()
@@ -436,17 +420,28 @@ func (c *Coordinator) GetTask(workerAddress string, assigned *task.Task) error {
 // ReturnTask accepts a finished task only if it is still handed out to the worker returning it. A task taken back from
 // a worker (e.g. one that missed a roll call) is handed out again, so a late copy from the original worker, or a
 // repeated return, is ignored to keep its pixels from being counted twice.
+//
+// Only the pixel data is taken from the worker; the image number and bounds come from the coordinator's own record of
+// the task. A result with the wrong amount of pixel data is rejected with an error and the task stays assigned, so the
+// worker stops and the task is handed out again when the worker deregisters.
 func (c *Coordinator) ReturnTask(done task.Task, nothing *misc.Nothing) error {
 	c.mutex.Lock()
-	_, handedOut := c.tasksHandedOut[done.WorkerAddress][done.ID]
-	delete(c.tasksHandedOut[done.WorkerAddress], done.ID)
+	assigned, handedOut := c.tasksHandedOut[done.WorkerAddress][done.ID]
+	if handedOut {
+		assigned.Pixels = done.Pixels
+		if !assigned.HasValidResult() {
+			c.mutex.Unlock()
+			return fmt.Errorf("task %d returned %d bytes of pixel data but needs %d", done.ID, len(done.Pixels), assigned.ResultSize())
+		}
+		delete(c.tasksHandedOut[done.WorkerAddress], done.ID)
+	}
 	c.mutex.Unlock()
 
 	if !handedOut {
 		c.logger.Warningf("Ignoring task %d from worker %s since it is no longer assigned to that worker", done.ID, done.WorkerAddress)
 		return nil
 	}
-	c.tasksDone <- done
+	c.tasksDone <- assigned
 	return nil
 }
 

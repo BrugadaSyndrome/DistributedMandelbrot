@@ -1,144 +1,152 @@
 package task
 
 import (
+	"image"
 	"testing"
 )
 
-type pixelKey struct {
-	row, column uint
-}
-
-// assertCoverage checks that coordinates cover every pixel of a height x width image exactly once
-func assertCoverage(t *testing.T, coordinates []Coordinate, height uint, width uint) {
+// assertCoverage checks that regions are non-empty, inside a width x height frame, and cover every pixel exactly once
+func assertCoverage(t *testing.T, regions []image.Rectangle, width int, height int) {
 	t.Helper()
-	seen := make(map[pixelKey]int, len(coordinates))
-	for _, c := range coordinates {
-		if c.Row >= height || c.Column >= width {
-			t.Fatalf("coordinate (row %d, column %d) is outside a %dx%d image", c.Row, c.Column, height, width)
+	frame := image.Rect(0, 0, width, height)
+	covered := make([]uint8, width*height)
+	for _, r := range regions {
+		if r.Empty() {
+			t.Fatalf("region %v is empty", r)
 		}
-		seen[pixelKey{c.Row, c.Column}]++
+		if !r.In(frame) {
+			t.Fatalf("region %v is outside the %v frame", r, frame)
+		}
+		for y := r.Min.Y; y < r.Max.Y; y++ {
+			for x := r.Min.X; x < r.Max.X; x++ {
+				covered[y*width+x]++
+			}
+		}
 	}
-	if uint(len(seen)) != height*width {
-		t.Fatalf("covered %d of %d pixels", len(seen), height*width)
-	}
-	for k, n := range seen {
+	for i, n := range covered {
 		if n != 1 {
-			t.Fatalf("pixel (row %d, column %d) covered %d times", k.row, k.column, n)
+			t.Fatalf("pixel (column %d, row %d) covered %d times", i%width, i/width, n)
 		}
 	}
 }
 
-func TestAddTasksForRow(t *testing.T) {
-	var all []Coordinate
-	for row := range uint(4) {
-		tk := NewTask(0, 1)
-		tk.AddTasksForRow(-0.5, 0.25, 3, row, 7)
-		if len(tk.Tasks) != 7 {
-			t.Fatalf("row %d: got %d coordinates, want 7", row, len(tk.Tasks))
-		}
-		for _, c := range tk.Tasks {
-			if c.Row != row {
-				t.Fatalf("row %d task contains coordinate for row %d", row, c.Row)
-			}
-		}
-		all = append(all, tk.Tasks...)
-	}
-	assertCoverage(t, all, 4, 7)
-}
-
-func TestAddTasksForColumn(t *testing.T) {
-	var all []Coordinate
-	for column := range uint(7) {
-		tk := NewTask(0, 1)
-		tk.AddTasksForColumn(-0.5, 0.25, 3, 4, column)
-		for _, c := range tk.Tasks {
-			if c.Column != column {
-				t.Fatalf("column %d task contains coordinate for column %d", column, c.Column)
-			}
-		}
-		all = append(all, tk.Tasks...)
-	}
-	assertCoverage(t, all, 4, 7)
-}
-
-func TestAddTasksForImage(t *testing.T) {
-	tk := NewTask(0, 1)
-	tk.AddTasksForImage(-0.5, 0.25, 3, 4, 7)
-	assertCoverage(t, tk.Tasks, 4, 7)
-}
-
-func TestAddTasksForImageByGrid(t *testing.T) {
+func TestRegionsCoverFrameExactlyOnce(t *testing.T) {
 	sizes := []struct {
 		name          string
-		height, width uint
+		width, height uint
 	}{
-		{"4K", 2160, 3840},
-		{"evenly divisible", 100, 200},
-		{"with remainder", 107, 253},
-		{"smaller than the grid", 5, 7},
+		{"4K", 3840, 2160},
+		{"not divisible by the grid", 97, 61},
+		{"smaller than the grid", 7, 5},
+		{"single pixel", 1, 1},
 	}
-	for _, size := range sizes {
-		t.Run(size.name, func(t *testing.T) {
-			var all []Coordinate
-			for gridRow := range GridDivisions {
-				for gridColumn := range GridDivisions {
-					tk := NewTask(0, 1)
-					tk.AddTasksForImageByGrid(-0.5, 0.25, 3, size.height, size.width, gridRow, gridColumn)
-					if size.height >= GridDivisions && size.width >= GridDivisions && len(tk.Tasks) == 0 {
-						t.Fatalf("grid cell (%d, %d) is empty", gridRow, gridColumn)
-					}
-					all = append(all, tk.Tasks...)
-				}
+	for _, generation := range []Generation{Row, Column, Image, Grid} {
+		for _, size := range sizes {
+			t.Run(generation.String()+"/"+size.name, func(t *testing.T) {
+				assertCoverage(t, Regions(generation, size.width, size.height), int(size.width), int(size.height))
+			})
+		}
+	}
+}
+
+func TestRegionsShape(t *testing.T) {
+	const width, height = 97, 61
+
+	t.Run("Row is one full width strip per row", func(t *testing.T) {
+		regions := Regions(Row, width, height)
+		if len(regions) != height {
+			t.Fatalf("got %d regions, want %d", len(regions), height)
+		}
+		for y, r := range regions {
+			if r != image.Rect(0, y, width, y+1) {
+				t.Fatalf("region %d = %v, want row %d", y, r, y)
 			}
-			assertCoverage(t, all, size.height, size.width)
-		})
+		}
+	})
+
+	t.Run("Column is one full height strip per column", func(t *testing.T) {
+		regions := Regions(Column, width, height)
+		if len(regions) != width {
+			t.Fatalf("got %d regions, want %d", len(regions), width)
+		}
+		for x, r := range regions {
+			if r != image.Rect(x, 0, x+1, height) {
+				t.Fatalf("region %d = %v, want column %d", x, r, x)
+			}
+		}
+	})
+
+	t.Run("Image is the whole frame", func(t *testing.T) {
+		regions := Regions(Image, width, height)
+		if len(regions) != 1 || regions[0] != image.Rect(0, 0, width, height) {
+			t.Fatalf("got %v, want the whole frame", regions)
+		}
+	})
+
+	t.Run("Grid cells absorb the remainder in the last row and column", func(t *testing.T) {
+		regions := Regions(Grid, width, height)
+		if len(regions) != int(GridDivisions*GridDivisions) {
+			t.Fatalf("got %d regions, want %d", len(regions), GridDivisions*GridDivisions)
+		}
+		// Cells are 9x6 pixels; the last column is 97 - 81 = 16 wide and the last row is 61 - 54 = 7 tall
+		want := map[image.Rectangle]bool{
+			image.Rect(0, 0, 9, 6):     true,
+			image.Rect(81, 0, 97, 6):   true,
+			image.Rect(0, 54, 9, 61):   true,
+			image.Rect(81, 54, 97, 61): true,
+		}
+		for _, r := range regions {
+			delete(want, r)
+		}
+		if len(want) != 0 {
+			t.Errorf("missing expected cells %v", want)
+		}
+	})
+
+	t.Run("Grid skips empty cells in a frame smaller than the grid", func(t *testing.T) {
+		regions := Regions(Grid, 7, 5)
+		if len(regions) != 1 || regions[0] != image.Rect(0, 0, 7, 5) {
+			t.Errorf("got %v, want a single cell covering the frame", regions)
+		}
+	})
+}
+
+func TestRegionsUnknownGeneration(t *testing.T) {
+	if regions := Regions(Generation(99), 10, 10); regions != nil {
+		t.Errorf("Regions for an unknown generation = %v, want nil", regions)
 	}
 }
 
-func TestAddTasksCopiesFrameParameters(t *testing.T) {
-	tk := NewTask(0, 1)
-	tk.AddTasksForImage(-0.75, 0.1, 42, 2, 2)
-	for _, c := range tk.Tasks {
-		if c.CenterX != -0.75 || c.CenterY != 0.1 || c.Magnification != 42 {
-			t.Fatalf("coordinate %s does not carry the frame's center and magnification", c.String())
-		}
+func TestNewTask(t *testing.T) {
+	frame := Frame{CenterX: -0.75, CenterY: 0.1, Magnification: 42}
+	bounds := image.Rect(2, 1, 6, 4)
+	tk := NewTask(7, 3, frame, bounds)
+
+	if tk.ID != 7 || tk.ImageNumber != 3 || tk.Frame != frame || tk.Bounds != bounds {
+		t.Errorf("NewTask = %+v, want ID 7, image 3, frame %+v and bounds %v", tk, frame, bounds)
+	}
+	if tk.Pixels != nil {
+		t.Error("a new task should not carry any pixel data")
+	}
+	if got := tk.PixelCount(); got != 12 {
+		t.Errorf("PixelCount() = %d, want 12", got)
+	}
+	if got := tk.ResultSize(); got != 48 {
+		t.Errorf("ResultSize() = %d, want 48", got)
 	}
 }
 
-func TestGetNextTaskAndAddResult(t *testing.T) {
-	tk := NewTask(5, 2)
-	tk.AddTasksForRow(0, 0, 1, 3, 4)
-
-	var processed []Coordinate
-	for {
-		c, err := tk.GetNextTask()
-		if err != nil {
-			break
-		}
-		processed = append(processed, c)
-		tk.AddResult(Pixel{Row: c.Row, Column: c.Column})
-		if len(processed) > len(tk.Tasks) {
-			t.Fatal("GetNextTask did not stop after all coordinates were processed")
+func TestHasValidResult(t *testing.T) {
+	tk := NewTask(0, 1, Frame{}, image.Rect(0, 0, 2, 3))
+	for _, size := range []int{0, 23, 25} {
+		tk.Pixels = make([]byte, size)
+		if tk.HasValidResult() {
+			t.Errorf("%d bytes of pixel data accepted for a task needing 24", size)
 		}
 	}
-
-	if len(processed) != 4 || len(tk.Results) != 4 {
-		t.Fatalf("processed %d coordinates and recorded %d results, want 4 of each", len(processed), len(tk.Results))
-	}
-	for i, c := range processed {
-		if c != tk.Tasks[i] {
-			t.Errorf("coordinate %d = %s, want %s", i, c.String(), tk.Tasks[i].String())
-		}
-	}
-	if _, err := tk.GetNextTask(); err == nil {
-		t.Error("GetNextTask should keep returning an error once all results are in")
-	}
-}
-
-func TestGetNextTaskOnEmptyTask(t *testing.T) {
-	tk := NewTask(0, 1)
-	if _, err := tk.GetNextTask(); err == nil {
-		t.Error("GetNextTask on a task with no coordinates should return an error")
+	tk.Pixels = make([]byte, 24)
+	if !tk.HasValidResult() {
+		t.Error("24 bytes of pixel data rejected for a 2x3 task")
 	}
 }
 

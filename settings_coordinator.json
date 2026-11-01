@@ -11,37 +11,52 @@
         "GeneratePaletteSettings": [
             {
                 "StartColor": {
+                    "R": 0,
+                    "G": 7,
+                    "B": 100,
+                    "A": 255
+                },
+                "EndColor": {
                     "R": 255,
-                    "G": 0,
+                    "G": 170,
+                    "B": 0,
+                    "A": 255
+                },
+                "NumberColors": 25
+            },
+            {
+                "StartColor": {
+                    "R": 255,
+                    "G": 170,
                     "B": 0,
                     "A": 255
                 },
                 "EndColor": {
                     "R": 0,
-                    "G": 255,
-                    "B": 255,
+                    "G": 7,
+                    "B": 100,
                     "A": 255
                 },
-                "NumberColors": 50
+                "NumberColors": 25
             }
         ],
         "Height": 2160,
-        "MaxIterations": 1000,
+        "MaxIterations": 10000,
         "SmoothColoring": true,
-        "SuperSampling": 1,
+        "SuperSampling": 2,
         "Width": 3840
     },
     "ServerAddress": "127.0.0.1:51000",
-    "TaskGeneration": 0,
+    "TaskGeneration": 3,
     "TransitionSettings": [
         {
-            "StartX": -0.5,
+            "StartX": -0.75,
             "StartY": 0.0,
-            "EndX": -0.761574,
-            "EndY": -0.0847596,
-            "MagnificationStart": 1,
-            "MagnificationEnd": 250,
-            "MagnificationStep": 1.25
+            "EndX": -0.743643887037151,
+            "EndY": 0.131825904205330,
+            "MagnificationStart": 0.4,
+            "MagnificationEnd": 100000,
+            "MagnificationStep": 1.05
         }
     ]
 }

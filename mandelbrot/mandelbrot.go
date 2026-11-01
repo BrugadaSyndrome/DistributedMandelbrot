@@ -22,7 +22,7 @@ func NewMandelbrot(settings Settings) Mandelbrot {
 }
 
 // todo: add other methods of super sampling
-func (m *Mandelbrot) GetPointsToCalculate(coordinate task.Coordinate) []Point {
+func (m *Mandelbrot) GetPointsToCalculate(frame task.Frame, column int, row int) []Point {
 	subPixels := make([]float64, m.settings.SuperSampling)
 	subPixels[0] = 0
 
@@ -37,7 +37,7 @@ func (m *Mandelbrot) GetPointsToCalculate(coordinate task.Coordinate) []Point {
 	i := 0
 	for _, sx := range subPixels {
 		for _, sy := range subPixels {
-			x, y := m.ConvertPixelCoordinateToComplexCoordinate(coordinate, sx, sy)
+			x, y := m.ConvertPixelCoordinateToComplexCoordinate(frame, column, row, sx, sy)
 			points[i] = Point{X: x, Y: y}
 			i++
 		}
@@ -129,7 +129,7 @@ func (m *Mandelbrot) escapeTime(x float64, y float64) (float64, uint) {
 	return iteration, loops
 }
 
-func (m *Mandelbrot) ConvertPixelCoordinateToComplexCoordinate(c task.Coordinate, xOffset float64, yOffset float64) (float64, float64) {
+func (m *Mandelbrot) ConvertPixelCoordinateToComplexCoordinate(frame task.Frame, column int, row int, xOffset float64, yOffset float64) (float64, float64) {
 	/*
 	 * Convert the (column, row) point on the image to the (x, y) point on the complex axis
 	 *
@@ -140,8 +140,8 @@ func (m *Mandelbrot) ConvertPixelCoordinateToComplexCoordinate(c task.Coordinate
 	 * - To magnify the image we need to multiply the denominator by a scalar; the larger the value the more magnified
 	 *   the image will be
 	 */
-	x := c.CenterX + (float64(c.Column)-(float64(m.settings.Width)/2.0)+xOffset)/(c.Magnification*(float64(m.settings.ShorterSide)-1))
-	y := c.CenterY + (float64(c.Row)-(float64(m.settings.Height)/2.0)-yOffset)/(c.Magnification*(float64(m.settings.ShorterSide)-1))
+	x := frame.CenterX + (float64(column)-(float64(m.settings.Width)/2.0)+xOffset)/(frame.Magnification*(float64(m.settings.ShorterSide)-1))
+	y := frame.CenterY + (float64(row)-(float64(m.settings.Height)/2.0)-yOffset)/(frame.Magnification*(float64(m.settings.ShorterSide)-1))
 	return x, y
 }
 

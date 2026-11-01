@@ -31,11 +31,36 @@ func newIngestTestCoordinator(t *testing.T, width int, height int, imageCount ui
 
 // rowTask returns a finished task with every pixel of one row set to the given color
 func rowTask(id uint, imageNumber uint, row uint, width uint, rowColor color.RGBA) task.Task {
-	done := task.NewTask(id, imageNumber)
-	for column := range width {
-		done.AddResult(task.Pixel{Color: rowColor, Column: column, Row: row})
+	done := task.NewTask(id, imageNumber, task.Frame{}, gimage.Rect(0, int(row), int(width), int(row)+1))
+	for range width {
+		done.Pixels = append(done.Pixels, rowColor.R, rowColor.G, rowColor.B, rowColor.A)
 	}
 	return done
+}
+
+// Each pixel must land at its own position, including for a region that does not start at the left edge
+func TestIngestTaskPlacesPixelsWithinBounds(t *testing.T) {
+	c := newIngestTestCoordinator(t, 6, 4, 1)
+	region := task.NewTask(0, 1, task.Frame{}, gimage.Rect(2, 1, 5, 3))
+	for i := range region.PixelCount() {
+		region.Pixels = append(region.Pixels, uint8(i), uint8(10*i), 7, 255)
+	}
+
+	c.ingestTask(region)
+
+	frame := c.images[1].Image
+	for i := range region.PixelCount() {
+		x, y := 2+i%3, 1+i/3
+		if got, want := frame.RGBAAt(x, y), (color.RGBA{R: uint8(i), G: uint8(10 * i), B: 7, A: 255}); got != want {
+			t.Errorf("pixel (%d, %d) = %v, want %v", x, y, got, want)
+		}
+	}
+	if got := frame.RGBAAt(1, 1); got != (color.RGBA{}) {
+		t.Errorf("pixel (1, 1) outside the region = %v, want untouched", got)
+	}
+	if got := c.images[1].PixelsLeft; got != 6*4-6 {
+		t.Errorf("PixelsLeft = %d, want %d", got, 6*4-6)
+	}
 }
 
 func framePath(c *Coordinator, imageNumber uint) string {
