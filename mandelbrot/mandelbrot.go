@@ -79,22 +79,33 @@ func (m *Mandelbrot) GetColor(iteration float64) color.RGBA {
 
 // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Optimized_escape_time_algorithms
 func (m *Mandelbrot) EscapeTime(x float64, y float64) float64 {
+	iteration, _ := m.escapeTime(x, y)
+	return iteration
+}
+
+// escapeTime also returns the number of times the loop actually ran, which lets tests confirm that periodicity
+// checking exits early for points inside the set
+func (m *Mandelbrot) escapeTime(x float64, y float64) (float64, uint) {
 	// Calculate the iteration value
 	x1, y1, x2, y2 := 0.0, 0.0, 0.0, 0.0
 	iteration, maxIterations := 0.0, float64(m.settings.MaxIterations)
 	period, oldX, oldY := 0.0, 0.0, 0.0
+	var loops uint
 	for (x2+y2) <= m.settings.Boundary && iteration < maxIterations {
 		y1 = 2*x1*y1 + y
 		x1 = x2 - y2 + x
 		x2 = x1 * x1
 		y2 = y1 * y1
 		iteration++
+		loops++
 
 		// periodicity checking can speed up detection when the maxIterations value is very large
 		// https://en.wikipedia.org/wiki/Cycle_detection
 		// https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Periodicity_checking
 		// https://davidaramant.github.io/post/brents-cycle-detection-algorithm/
-		if x == oldX && y == oldY {
+		// If z (x1, y1) exactly repeats a previously saved value the orbit is a cycle and will never escape. Since each
+		// step is deterministic an exact match can never be a false positive.
+		if x1 == oldX && y1 == oldY {
 			iteration = maxIterations
 			break
 		}
@@ -102,8 +113,8 @@ func (m *Mandelbrot) EscapeTime(x float64, y float64) float64 {
 		period++
 		if period > 20 {
 			period = 0
-			oldX = x2
-			oldY = y2
+			oldX = x1
+			oldY = y1
 		}
 	}
 
@@ -115,7 +126,7 @@ func (m *Mandelbrot) EscapeTime(x float64, y float64) float64 {
 		iteration = iteration + 1 - nu
 	}
 
-	return iteration
+	return iteration, loops
 }
 
 func (m *Mandelbrot) ConvertPixelCoordinateToComplexCoordinate(c task.Coordinate, xOffset float64, yOffset float64) (float64, float64) {

@@ -4,12 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build and run
 
-Go module `DistributedMandelbrot` (Go 1.27, per `go.mod`). There are no tests or lint config in the repo.
+Go module `DistributedMandelbrot` (Go 1.27, per `go.mod`). Tests use only the standard `testing` package (no assertion libraries).
 
 ```bash
 go build            # produces DistributedMandelbrot(.exe)
 go vet ./...
+go test ./...
+go test ./mandelbrot/ -run TestPeriodicityCheckExitsEarly -v   # single test
+go test ./mandelbrot/ -run '^$' -bench .                        # benchmarks only
 ```
+
+`go test -race` needs cgo (`CGO_ENABLED=1` plus a C compiler), which is not set up on the Windows dev machine.
+
+Testing conventions: tests live next to the code in the same package (internal tests), so unexported types like `generatePaletteSettings`, `transitionSettings` and `escapeTime` can be tested directly. Prefer table-driven tests. `mandelbrot.escapeTime` returns the loop count alongside the result as a test seam; `TestEscapeTimeMatchesNaive` guards that optimizations never change pixel output. `NewCoordinator`/`NewWorker` start RPC servers and goroutines, so logic inside them is untested until extracted into pure functions.
 
 A run needs two processes; start the coordinator first, then the worker(s):
 
