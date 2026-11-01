@@ -93,10 +93,12 @@ func (w *Worker) processTasks() {
 		err = w.ServerClient.Client.Call("Coordinator.GetTask", w.myAddress, &taskTodo)
 		if err != nil {
 			// This is an expected error. No more work to do
-			if err.Error() == "all tasks handed out" {
+			if err.Error() == task.NoMoreTasksMessage {
 				break
 			}
-			w.logger.Fatalf("Unable to get a task: %s", err.Error())
+			// Stop only this worker; other workers in the same process may still be able to keep going
+			w.logger.Errorf("Unable to get a task: %s", err.Error())
+			break
 		}
 
 		for {

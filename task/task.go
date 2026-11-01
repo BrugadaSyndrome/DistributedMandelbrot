@@ -15,6 +15,10 @@ const (
 // GridDivisions is the number of cells per side when using Grid task generation
 const GridDivisions uint = 10
 
+// NoMoreTasksMessage is the error the coordinator's GetTask returns once every task has been completed. RPC errors
+// arrive at the worker as plain strings, so the worker compares against this exact message.
+const NoMoreTasksMessage = "all tasks handed out"
+
 type Generation int
 
 func (g Generation) String() string {

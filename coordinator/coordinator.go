@@ -22,6 +22,7 @@ import (
 )
 
 type Coordinator struct {
+	allTasksDone        chan struct{} // closed once every task has been ingested; tells waiting workers to stop
 	clients             map[string]*multirpc.TcpClient
 	digitCount          uint // Used to format name of images for ffmpeg
 	images              map[int]imageTask
@@ -48,7 +49,8 @@ func NewCoordinator(settingsFile string) *Coordinator {
 	settings := NewSettings(settingsFile)
 
 	coordinator := &Coordinator{
-		clients:    make(map[string]*multirpc.TcpClient),
+		allTasksDone: make(chan struct{}),
+		clients:      make(map[string]*multirpc.TcpClient),
 		images:     make(map[int]imageTask),
 		logger:     bslogger.NewLogger("Coordinator", bslogger.Normal, nil),
 		pixelCount: settings.MandelbrotSettings.Height * settings.MandelbrotSettings.Width,
@@ -135,15 +137,21 @@ func (c *Coordinator) tickers() {
 		case _ = <-rollCall.C:
 			c.logger.Debug("Roll call ticker")
 			var junk misc.Nothing
+			// Copy the clients so workers can register and deregister while the roll call is in progress
+			c.mutex.Lock()
+			clients := make([]*multirpc.TcpClient, 0, len(c.clients))
 			for _, v := range c.clients {
+				clients = append(clients, v)
+			}
+			c.mutex.Unlock()
+			for _, v := range clients {
 				var reply bool
 				err := v.Call("Worker.RollCall", junk, &reply)
 				if err != nil {
 					// Cannot communicate with the worker
 					c.logger.Warningf("Worker %s missed roll call: %s", v.Name(), err)
-					misc.CheckError(v.Disconnect(), c.logger, misc.Warning)
 
-					// Remove worker from pool
+					// Remove worker from pool, which also disconnects from it
 					var nothing misc.Nothing
 					misc.CheckError(c.DeRegisterWorker(v.Name(), &nothing), c.logger, misc.Warning)
 				}
@@ -213,7 +221,7 @@ func (c *Coordinator) generateTasks() {
 	}
 
 	elapsedTime = time.Since(startTime)
-	close(c.tasksTodo)
+	// tasksTodo is intentionally left open: tasks from workers that leave are put back into it until all are done
 
 	c.logger.Infof("Done generating %d tasks in %s", c.taskGeneratedCount, elapsedTime.Round(time.Second).String())
 }
@@ -250,7 +258,6 @@ func (c *Coordinator) ingestTasks() {
 			image.PixelsLeft--
 			c.mutex.Lock()
 			c.images[int(taskReceived.ImageNumber)] = image
-			delete(c.tasksHandedOut[taskReceived.WorkerAddress], taskReceived.ID)
 			c.mutex.Unlock()
 
 			// All pixels have been recorded so save the image
@@ -276,7 +283,8 @@ func (c *Coordinator) ingestTasks() {
 	}
 
 	elapsedTime = time.Since(startTime)
-	close(c.tasksDone)
+	// Release workers waiting in GetTask. tasksDone stays open so a late ReturnTask can never panic.
+	close(c.allTasksDone)
 	c.logger.Infof("Done ingesting %d tasks in %s", c.taskIngestedCount, elapsedTime.Round(time.Second).String())
 
 	c.logger.Infof("Waiting for %d workers to disconnect", len(c.clients))
@@ -317,23 +325,43 @@ func (c *Coordinator) RegisterWorker(workerServerAddress string, reply *misc.Not
 }
 
 func (c *Coordinator) DeRegisterWorker(workerServerAddress string, reply *misc.Nothing) error {
-	// Disconnect from worker
-	misc.CheckError(c.clients[workerServerAddress].Disconnect(), c.logger, misc.Warning)
-
 	c.mutex.Lock()
-	// Put tasks this worker has not returned yet back into the tasksTodo pool
+	client, registered := c.clients[workerServerAddress]
+	if !registered {
+		// e.g. a worker removed after missing a roll call that later deregisters itself
+		c.mutex.Unlock()
+		return fmt.Errorf("worker %s is not registered", workerServerAddress)
+	}
+	unfinished := make([]task.Task, 0, len(c.tasksHandedOut[workerServerAddress]))
 	for _, todo := range c.tasksHandedOut[workerServerAddress] {
-		c.tasksTodo <- todo
+		unfinished = append(unfinished, todo)
 	}
 	// Remove stored values associated with this worker
 	delete(c.tasksHandedOut, workerServerAddress)
 	delete(c.clients, workerServerAddress)
 	c.mutex.Unlock()
 
-	c.logger.Infof("Worker left: %s", workerServerAddress)
+	misc.CheckError(client.Disconnect(), c.logger, misc.Warning)
+	// Put tasks this worker has not returned yet back into the tasksTodo pool
+	c.requeue(unfinished)
+
+	c.logger.Infof("Worker left: %s (%d unfinished tasks requeued)", workerServerAddress, len(unfinished))
 	c.workerWait.Done()
 
 	return nil
+}
+
+// requeue puts tasks back into tasksTodo in the background, since tasksTodo may be full and the caller should not
+// block (or hold the mutex) until workers make room
+func (c *Coordinator) requeue(tasks []task.Task) {
+	if len(tasks) == 0 {
+		return
+	}
+	go func() {
+		for _, todo := range tasks {
+			c.tasksTodo <- todo
+		}
+	}()
 }
 
 func (c *Coordinator) RollCall(nothing misc.Nothing, present *bool) error {
@@ -341,24 +369,57 @@ func (c *Coordinator) RollCall(nothing misc.Nothing, present *bool) error {
 	return nil
 }
 
-func (c *Coordinator) GetTask(workerAddress string, task *task.Task) error {
-	todo, more := <-c.tasksTodo
-	if !more {
-		task = nil
-		c.logger.Infof("Telling worker %s that all tasks are handed out", workerAddress)
-		return errors.New("all tasks handed out")
+// GetTask hands the worker the next task. When no task is queued it waits, because a worker that leaves may still
+// have tasks that need to be handed out again, and only reports that there is no more work once every task is done.
+func (c *Coordinator) GetTask(workerAddress string, assigned *task.Task) error {
+	if !c.isRegistered(workerAddress) {
+		return fmt.Errorf("worker %s is not registered", workerAddress)
 	}
+
+	select {
+	case todo := <-c.tasksTodo:
+		c.mutex.Lock()
+		handedOut, registered := c.tasksHandedOut[workerAddress]
+		if registered {
+			todo.WorkerAddress = workerAddress
+			handedOut[todo.ID] = todo
+		}
+		c.mutex.Unlock()
+		if !registered {
+			// The worker was removed while waiting for a task
+			c.requeue([]task.Task{todo})
+			return fmt.Errorf("worker %s is not registered", workerAddress)
+		}
+		*assigned = todo
+		return nil
+	case <-c.allTasksDone:
+		c.logger.Infof("Telling worker %s that all tasks are done", workerAddress)
+		return errors.New(task.NoMoreTasksMessage)
+	}
+}
+
+// ReturnTask accepts a finished task only if it is still handed out to the worker returning it. A task taken back from
+// a worker (e.g. one that missed a roll call) is handed out again, so a late copy from the original worker, or a
+// repeated return, is ignored to keep its pixels from being counted twice.
+func (c *Coordinator) ReturnTask(done task.Task, nothing *misc.Nothing) error {
 	c.mutex.Lock()
-	todo.WorkerAddress = workerAddress
-	c.tasksHandedOut[workerAddress][todo.ID] = todo
+	_, handedOut := c.tasksHandedOut[done.WorkerAddress][done.ID]
+	delete(c.tasksHandedOut[done.WorkerAddress], done.ID)
 	c.mutex.Unlock()
-	*task = todo
+
+	if !handedOut {
+		c.logger.Warningf("Ignoring task %d from worker %s since it is no longer assigned to that worker", done.ID, done.WorkerAddress)
+		return nil
+	}
+	c.tasksDone <- done
 	return nil
 }
 
-func (c *Coordinator) ReturnTask(done task.Task, nothing *misc.Nothing) error {
-	c.tasksDone <- done
-	return nil
+func (c *Coordinator) isRegistered(workerAddress string) bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	_, registered := c.tasksHandedOut[workerAddress]
+	return registered
 }
 
 func (c *Coordinator) GetMandelbrotSettings(nothing misc.Nothing, settings *mandelbrot.Settings) error {
