@@ -3,6 +3,7 @@ package coordinator
 import (
 	"DistributedMandelbrot/misc"
 	"DistributedMandelbrot/task"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -208,4 +209,75 @@ func TestReturnTaskIgnoresDuplicatesAndRemovedWorkers(t *testing.T) {
 	if ingested := <-c.tasksDone; ingested.WorkerAddress != "b" {
 		t.Errorf("ingested copy came from worker %q, want b", ingested.WorkerAddress)
 	}
+}
+
+// waitForWorkers fails the test if workerWait does not reach zero, instead of hanging
+func waitForWorkers(t *testing.T, c *Coordinator) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		c.workerWait.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("workerWait.Wait did not return; a registration was counted without a matching deregistration")
+	}
+}
+
+// Addresses without a port make RegisterWorker's connection attempt fail immediately (it only logs a warning), so the
+// real RegisterWorker can be used in tests
+func TestRegisterWorkerTwice(t *testing.T) {
+	c := newTestCoordinator()
+	var nothing misc.Nothing
+	if err := c.RegisterWorker("a", &nothing); err != nil {
+		t.Fatalf("first RegisterWorker returned error: %s", err)
+	}
+	if err := c.RegisterWorker("a", &nothing); err == nil {
+		t.Error("registering the same worker twice should return an error")
+	}
+	if err := c.DeRegisterWorker("a", &nothing); err != nil {
+		t.Fatalf("DeRegisterWorker returned error: %s", err)
+	}
+	waitForWorkers(t, c)
+}
+
+// Once all tasks are done ingestTasks waits for registered workers to leave, so new workers must be turned away
+func TestRegisterWorkerAfterAllTasksDone(t *testing.T) {
+	c := newTestCoordinator()
+	close(c.allTasksDone)
+
+	var nothing misc.Nothing
+	err := c.RegisterWorker("late", &nothing)
+	if err == nil || err.Error() != task.NoMoreTasksMessage {
+		t.Errorf("RegisterWorker error = %v, want %q", err, task.NoMoreTasksMessage)
+	}
+	if c.isRegistered("late") {
+		t.Error("a worker arriving after all tasks are done should not be registered")
+	}
+	waitForWorkers(t, c)
+}
+
+// Workers registering and deregistering concurrently must always leave the wait group balanced
+func TestRegisterAndDeRegisterConcurrently(t *testing.T) {
+	c := newTestCoordinator()
+	var wg sync.WaitGroup
+	for i := range 50 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			address := fmt.Sprintf("worker-%d", i)
+			var nothing misc.Nothing
+			if err := c.RegisterWorker(address, &nothing); err != nil {
+				t.Errorf("RegisterWorker(%s) returned error: %s", address, err)
+				return
+			}
+			if err := c.DeRegisterWorker(address, &nothing); err != nil {
+				t.Errorf("DeRegisterWorker(%s) returned error: %s", address, err)
+			}
+		}()
+	}
+	wg.Wait()
+	waitForWorkers(t, c)
 }

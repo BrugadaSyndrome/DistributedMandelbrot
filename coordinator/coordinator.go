@@ -15,32 +15,39 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/BrugadaSyndrome/bslogger"
 	"github.com/BrugadaSyndrome/multirpc"
 )
 
+// Coordinator hands out tasks to workers and assembles their results into images.
+//
+// Concurrency: clients and tasksHandedOut are guarded by mutex. images is only touched by the ingestTasks goroutine.
+// The counters below are atomic because each has a single writer goroutine but is also read by the heartbeat ticker.
 type Coordinator struct {
-	allTasksDone        chan struct{} // closed once every task has been ingested; tells waiting workers to stop
-	clients             map[string]*multirpc.TcpClient
-	digitCount          uint // Used to format name of images for ffmpeg
-	images              map[int]imageTask
-	imageCompletedCount uint
-	imageCount          uint
-	logger              bslogger.Logger
-	mutex               sync.Mutex
-	name                string
-	pixelCount          uint
-	rectangle           gimage.Rectangle
-	settings            settings
-	taskCount           uint
-	taskGeneratedCount  uint
-	taskIngestedCount   uint
-	tasksHandedOut      map[string]map[uint]task.Task // keep track of all tasks workers have
-	tasksDone           chan task.Task
-	tasksTodo           chan task.Task
-	workerWait          *sync.WaitGroup
+	allTasksDone   chan struct{} // closed once every task has been ingested; tells waiting workers to stop
+	clients        map[string]*multirpc.TcpClient
+	digitCount     uint // Used to format name of images for ffmpeg
+	images         map[int]imageTask
+	imageCount     uint
+	logger         bslogger.Logger
+	mutex          sync.Mutex
+	name           string
+	pixelCount     uint
+	rectangle      gimage.Rectangle
+	settings       settings
+	taskCount      uint
+	tasksHandedOut map[string]map[uint]task.Task // keep track of all tasks workers have
+	tasksDone      chan task.Task
+	tasksTodo      chan task.Task
+	workerWait     *sync.WaitGroup
+
+	imageCompletedCount atomic.Uint64 // written by ingestTasks
+	imagesInProgress    atomic.Int64  // written by ingestTasks; mirrors len(images) for the heartbeat
+	taskGeneratedCount  atomic.Uint64 // written by generateTasks
+	taskIngestedCount   atomic.Uint64 // written by ingestTasks
 
 	Server multirpc.TcpServer
 }
@@ -96,10 +103,6 @@ func NewCoordinator(settingsFile string) *Coordinator {
 		break
 	}
 
-	// Start up the rpc tcp server to allow workers to communicate with the coordinator
-	coordinator.Server = multirpc.NewTcpServer(coordinator, settings.ServerAddress, "CoordinatorServer")
-	misc.CheckError(coordinator.Server.Run(), coordinator.logger, misc.Fatal)
-
 	// Create directory to store files for this run
 	if _, err := os.Stat(filepath.Join(settings.SavePath, settings.RunName)); os.IsNotExist(err) {
 		err = os.Mkdir(filepath.Join(settings.SavePath, settings.RunName), os.ModePerm)
@@ -120,6 +123,11 @@ func NewCoordinator(settingsFile string) *Coordinator {
 	logFile, err := os.Create(filepath.Join(settings.SavePath, settings.RunName, "coordinator.log"))
 	misc.CheckError(err, coordinator.logger, misc.Warning)
 	coordinator.logger = bslogger.NewLogger("Coordinator", bslogger.Normal, logFile)
+
+	// Start up the rpc tcp server to allow workers to communicate with the coordinator. This must come after all other
+	// setup: once Run returns, worker calls are handled on their own goroutines and may read any coordinator field.
+	coordinator.Server = multirpc.NewTcpServer(coordinator, settings.ServerAddress, "CoordinatorServer")
+	misc.CheckError(coordinator.Server.Run(), coordinator.logger, misc.Fatal)
 
 	go coordinator.tickers()
 	go coordinator.generateTasks()
@@ -159,7 +167,7 @@ func (c *Coordinator) tickers() {
 
 		case _ = <-heartBeat.C:
 			c.logger.Debug("Heart beat ticker")
-			c.logger.Infof("Tasks [Generated: %d] [Ingested: %d] | Images [Completed: %d] [WIP: %d] [Todo: %d]", c.taskGeneratedCount, c.taskIngestedCount, c.imageCompletedCount, len(c.images), c.imageCount-c.imageCompletedCount)
+			c.logger.Info(c.status())
 		}
 	}
 }
@@ -183,32 +191,28 @@ func (c *Coordinator) generateTasks() {
 			case task.Row:
 				var row uint
 				for row = 0; row < c.settings.MandelbrotSettings.Height; row++ {
-					taskTodo := task.NewTask(c.taskGeneratedCount, imageNumber)
+					taskTodo := c.newTask(imageNumber)
 					taskTodo.AddTasksForRow(currentX, currentY, magnification, row, c.settings.MandelbrotSettings.Width)
 					c.tasksTodo <- taskTodo
-					c.taskGeneratedCount++
 				}
 			case task.Column:
 				var column uint
 				for column = 0; column < c.settings.MandelbrotSettings.Width; column++ {
-					taskTodo := task.NewTask(c.taskGeneratedCount, imageNumber)
+					taskTodo := c.newTask(imageNumber)
 					taskTodo.AddTasksForColumn(currentX, currentY, magnification, c.settings.MandelbrotSettings.Height, column)
 					c.tasksTodo <- taskTodo
-					c.taskGeneratedCount++
 				}
 			case task.Image:
-				taskTodo := task.NewTask(c.taskGeneratedCount, imageNumber)
+				taskTodo := c.newTask(imageNumber)
 				taskTodo.AddTasksForImage(currentX, currentY, magnification, c.settings.MandelbrotSettings.Height, c.settings.MandelbrotSettings.Width)
 				c.tasksTodo <- taskTodo
-				c.taskGeneratedCount++
 			case task.Grid:
 				var gridRow, gridColumn uint
 				for gridRow = range task.GridDivisions {
 					for gridColumn = range task.GridDivisions {
-						taskTodo := task.NewTask(c.taskGeneratedCount, imageNumber)
+						taskTodo := c.newTask(imageNumber)
 						taskTodo.AddTasksForImageByGrid(currentX, currentY, magnification, c.settings.MandelbrotSettings.Height, c.settings.MandelbrotSettings.Width, gridRow, gridColumn)
 						c.tasksTodo <- taskTodo
-						c.taskGeneratedCount++
 					}
 				}
 			default:
@@ -223,7 +227,7 @@ func (c *Coordinator) generateTasks() {
 	elapsedTime = time.Since(startTime)
 	// tasksTodo is intentionally left open: tasks from workers that leave are put back into it until all are done
 
-	c.logger.Infof("Done generating %d tasks in %s", c.taskGeneratedCount, elapsedTime.Round(time.Second).String())
+	c.logger.Infof("Done generating %d tasks in %s", c.taskGeneratedCount.Load(), elapsedTime.Round(time.Second).String())
 }
 
 func (c *Coordinator) ingestTasks() {
@@ -232,62 +236,20 @@ func (c *Coordinator) ingestTasks() {
 	var elapsedTime time.Duration
 	var startTime = time.Now()
 
-	for {
-		if c.taskIngestedCount == c.taskCount {
-			// There are no more tasks to ingest
-			break
-		}
-
-		// Get the next task to work on
-		taskReceived, _ := <-c.tasksDone
-		c.taskIngestedCount++
-
-		for r := 0; r < len(taskReceived.Results); r++ {
-			image, ok := c.images[int(taskReceived.ImageNumber)]
-			if !ok {
-				// Need to create an image save the incoming pixels
-				image = imageTask{
-					Image:      gimage.NewRGBA(c.rectangle),
-					PixelsLeft: c.pixelCount,
-				}
-			}
-
-			// Record the pixel on the image and decrement the amount of pixels left to be recorded
-			result := taskReceived.Results[r]
-			image.Image.SetRGBA(int(result.Column), int(result.Row), result.Color)
-			image.PixelsLeft--
-			c.mutex.Lock()
-			c.images[int(taskReceived.ImageNumber)] = image
-			c.mutex.Unlock()
-
-			// All pixels have been recorded so save the image
-			if image.PixelsLeft == 0 {
-				path := filepath.Join(c.settings.SavePath, c.settings.RunName, fmt.Sprintf("%0[1]*[2]d.jpg", c.digitCount, taskReceived.ImageNumber))
-				f, err := os.Create(path)
-				if err != nil {
-					c.logger.Fatalf("ERROR - Unable to create image: %s", err)
-				}
-				err = jpeg.Encode(f, image.Image, nil)
-				if err != nil {
-					c.logger.Fatalf("ERROR - Unable to save image: %s", err)
-				}
-				c.logger.Infof("Saved image to %s", path)
-
-				// Remove the image to conserve memory
-				c.mutex.Lock()
-				delete(c.images, int(taskReceived.ImageNumber))
-				c.mutex.Unlock()
-				c.imageCompletedCount++
-			}
-		}
+	for c.taskIngestedCount.Load() < uint64(c.taskCount) {
+		c.ingestTask(<-c.tasksDone)
 	}
 
 	elapsedTime = time.Since(startTime)
-	// Release workers waiting in GetTask. tasksDone stays open so a late ReturnTask can never panic.
+	// Release workers waiting in GetTask. tasksDone stays open so a late ReturnTask can never panic. Closing under the
+	// mutex means RegisterWorker either finished its workerWait.Add before this point or will see the close and refuse.
+	c.mutex.Lock()
 	close(c.allTasksDone)
-	c.logger.Infof("Done ingesting %d tasks in %s", c.taskIngestedCount, elapsedTime.Round(time.Second).String())
+	workersLeft := len(c.clients)
+	c.mutex.Unlock()
+	c.logger.Infof("Done ingesting %d tasks in %s", c.taskIngestedCount.Load(), elapsedTime.Round(time.Second).String())
 
-	c.logger.Infof("Waiting for %d workers to disconnect", len(c.clients))
+	c.logger.Infof("Waiting for %d workers to disconnect", workersLeft)
 	c.workerWait.Wait()
 
 	if c.settings.GenerateMovie {
@@ -296,6 +258,66 @@ func (c *Coordinator) ingestTasks() {
 
 	c.logger.Info("Shutting Down")
 	misc.CheckError(c.Server.Stop(), c.logger, misc.Warning)
+}
+
+// ingestTask records a finished task's pixels on its image and saves the image once every pixel has arrived. It must
+// only be called from the ingestTasks goroutine, which owns the images map, so no locking is needed.
+func (c *Coordinator) ingestTask(taskReceived task.Task) {
+	c.taskIngestedCount.Add(1)
+	imageNumber := int(taskReceived.ImageNumber)
+
+	image, ok := c.images[imageNumber]
+	if !ok {
+		// Need to create an image to save the incoming pixels
+		image = imageTask{
+			Image:      gimage.NewRGBA(c.rectangle),
+			PixelsLeft: c.pixelCount,
+		}
+	}
+
+	// Record the pixels on the image and decrement the amount of pixels left to be recorded
+	for _, result := range taskReceived.Results {
+		image.Image.SetRGBA(int(result.Column), int(result.Row), result.Color)
+	}
+	image.PixelsLeft -= uint(len(taskReceived.Results))
+
+	if image.PixelsLeft > 0 {
+		c.images[imageNumber] = image
+		c.imagesInProgress.Store(int64(len(c.images)))
+		return
+	}
+
+	// All pixels have been recorded so save the image
+	path := filepath.Join(c.settings.SavePath, c.settings.RunName, fmt.Sprintf("%0[1]*[2]d.jpg", c.digitCount, taskReceived.ImageNumber))
+	f, err := os.Create(path)
+	if err != nil {
+		c.logger.Fatalf("ERROR - Unable to create image: %s", err)
+	}
+	err = jpeg.Encode(f, image.Image, nil)
+	if err != nil {
+		c.logger.Fatalf("ERROR - Unable to save image: %s", err)
+	}
+	misc.CheckError(f.Close(), c.logger, misc.Warning)
+	c.logger.Infof("Saved image to %s", path)
+
+	// Remove the image to conserve memory
+	delete(c.images, imageNumber)
+	c.imagesInProgress.Store(int64(len(c.images)))
+	c.imageCompletedCount.Add(1)
+}
+
+// status summarizes progress for the heartbeat log. It only reads atomic counters and fields that never change after
+// startup, so it is safe to call from any goroutine.
+func (c *Coordinator) status() string {
+	completed := c.imageCompletedCount.Load()
+	return fmt.Sprintf("Tasks [Generated: %d] [Ingested: %d] | Images [Completed: %d] [WIP: %d] [Todo: %d]",
+		c.taskGeneratedCount.Load(), c.taskIngestedCount.Load(), completed, c.imagesInProgress.Load(), uint64(c.imageCount)-completed)
+}
+
+// newTask creates a task with the next ID. Only generateTasks creates tasks, but the count is also read by status.
+func (c *Coordinator) newTask(imageNumber uint) task.Task {
+	id := c.taskGeneratedCount.Add(1) - 1
+	return task.NewTask(uint(id), imageNumber)
 }
 
 func (c *Coordinator) generateMovie() {
@@ -312,14 +334,27 @@ func (c *Coordinator) RegisterWorker(workerServerAddress string, reply *misc.Not
 	// Create a client to communicate with this worker
 	client := multirpc.NewTcpClient(workerServerAddress, workerServerAddress)
 	c.mutex.Lock()
+	if _, registered := c.clients[workerServerAddress]; registered {
+		c.mutex.Unlock()
+		return fmt.Errorf("worker %s is already registered", workerServerAddress)
+	}
+	select {
+	case <-c.allTasksDone:
+		// ingestTasks may already be waiting for workers to leave, so a new worker must not be added
+		c.mutex.Unlock()
+		return errors.New(task.NoMoreTasksMessage)
+	default:
+	}
 	c.clients[workerServerAddress] = &client
 	// Track all tasks this worker checks out
 	c.tasksHandedOut[workerServerAddress] = make(map[uint]task.Task)
+	// Add to the wait group while holding the mutex: the matching Done in DeRegisterWorker takes the same mutex so it
+	// can never run first, and allTasksDone is closed under the mutex so this always happens before ingestTasks waits
+	c.workerWait.Add(1)
 	c.mutex.Unlock()
 	misc.CheckError(client.Connect(), c.logger, misc.Warning)
 
 	c.logger.Infof("Worker joined: %s", workerServerAddress)
-	c.workerWait.Add(1)
 
 	return nil
 }

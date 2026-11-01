@@ -48,8 +48,7 @@ func startWorkerMode(settingsFile string) {
 	workers := make([]*worker.Worker, workerCount)
 	var i uint
 	for i = 0; i < workerCount; i++ {
-		w := worker.NewWorker(settingsFile)
-		workers[i] = &w
+		workers[i] = worker.NewWorker(settingsFile)
 	}
 
 	for i = 0; i < workerCount; i++ {
