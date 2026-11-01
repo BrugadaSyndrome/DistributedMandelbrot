@@ -16,7 +16,7 @@ go test ./mandelbrot/ -run '^$' -bench .                        # benchmarks onl
 
 `go test -race` needs cgo (`CGO_ENABLED=1` plus a C compiler), which is not set up on the Windows dev machine.
 
-Testing conventions: tests live next to the code in the same package (internal tests), so unexported types like `generatePaletteSettings`, `transitionSettings` and `escapeTime` can be tested directly. Prefer table-driven tests. `mandelbrot.escapeTime` returns the loop count alongside the result as a test seam; `TestEscapeTimeMatchesNaive` guards that optimizations never change pixel output. `NewCoordinator`/`NewWorker` start RPC servers and goroutines, so logic inside them is untested until extracted into pure functions.
+Testing conventions: tests live next to the code in the same package (internal tests), so unexported types like `generatePaletteSettings`, `transitionSettings` and `escapeTime` can be tested directly. Prefer table-driven tests. `mandelbrot.escapeTime` returns the loop count alongside the result as a test seam; `TestEscapeTimeMatchesNaive` guards that optimizations never change pixel output. `NewCoordinator`/`NewWorker` start RPC servers and goroutines, so put new logic in pure functions or methods (like `transitionSettings.frameCount`/`frame`) that can be tested directly.
 
 A run needs two processes; start the coordinator first, then the worker(s):
 
@@ -34,8 +34,8 @@ Output goes to `<SavePath>/<RunName>/` (defaults: cwd and `run_<timestamp>`): on
 Two roles in one binary, selected in `main.go`. All communication is bidirectional net/rpc over TCP via the external `github.com/BrugadaSyndrome/multirpc` module; logging uses `github.com/BrugadaSyndrome/bslogger`. Both are the author's own modules (split out of this repo), so API changes there show up here as dependency bumps.
 
 **Coordinator** (`coordinator/`) is an RPC server. On startup it:
-1. Computes the frame count for each `TransitionSettings` entry from the magnification start/end/step (log formula in `NewCoordinator`) and the total task count from `TaskGeneration`. The coordinator shuts down when `taskIngestedCount == taskCount`, so **any change to how tasks are generated must keep that count calculation in sync**.
-2. `generateTasks` goroutine walks each transition frame by frame (exponential magnification, eased lerp of center X/Y) and pushes `task.Task`s into the buffered `tasksTodo` channel, closing it at the end.
+1. Computes the frame count for each `TransitionSettings` entry with `transitionSettings.frameCount()` and the total task count from `TaskGeneration`. The coordinator shuts down when `taskIngestedCount == taskCount`, so **any change to how tasks are generated must keep that count calculation in sync**.
+2. `generateTasks` goroutine walks each transition frame by frame, getting each frame's center and magnification from `transitionSettings.frame(i)`, and pushes `task.Task`s into the buffered `tasksTodo` channel, closing it at the end. Frame `i` is at `start × step^i` (or `÷` when zooming out); the first frame is exactly the start values and the last frame reaches the end magnification (exactly, or less than one step past) and exactly the end center. Consecutive transitions that share an endpoint therefore render that boundary frame twice.
 3. `ingestTasks` goroutine reads finished tasks from `tasksDone`, paints pixels into a per-frame `image.RGBA` (`images` map keyed by frame number), and writes the JPEG and frees memory when that frame's `PixelsLeft` reaches 0.
 
 RPC methods exposed to workers: `RegisterWorker`, `DeRegisterWorker`, `GetTask`, `ReturnTask`, `GetMandelbrotSettings`, `RollCall`. `GetTask` returns the error string `"all tasks handed out"` once `tasksTodo` is closed — the worker matches that exact string to exit cleanly. The coordinator tracks tasks per worker in `tasksHandedOut`; on deregistration (or a missed roll call, checked every minute) unreturned tasks are pushed back into `tasksTodo`.

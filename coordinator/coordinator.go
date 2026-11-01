@@ -70,25 +70,10 @@ func NewCoordinator(settingsFile string) *Coordinator {
 	}
 	misc.CheckError(settings.Verify(), coordinator.logger, misc.Fatal)
 
-	/*
-	 * Use logarithms to determine the number of images that will be generated
-	 *
-	 * i.e.
-	 * magnification_start + magnification_step^n = magnification_end
-	 * log(magnification_start) + n = log_magnification_step(magnification_end)
-	 * n = (log(magnification_end) / log(magnification_step)) - log(magnification_start)
-	 */
-	for i := 0; i < len(settings.TransitionSettings); i++ {
-		var transitionCount uint = 1
-		if settings.TransitionSettings[i].MagnificationStart < settings.TransitionSettings[i].MagnificationEnd {
-			// zooming in
-			transitionCount = uint(math.Ceil((math.Log(settings.TransitionSettings[i].MagnificationEnd) / math.Log(settings.TransitionSettings[i].MagnificationStep)) - math.Log(settings.TransitionSettings[i].MagnificationStart)))
-		} else {
-			// zooming out
-			transitionCount = uint(math.Ceil((math.Log(settings.TransitionSettings[i].MagnificationStart) / math.Log(settings.TransitionSettings[i].MagnificationStep)) - math.Log(settings.TransitionSettings[i].MagnificationEnd)))
-		}
-		coordinator.imageCount += transitionCount
-		settings.TransitionSettings[i].FrameCount = transitionCount
+	// Determine the number of images that will be generated for each transition (see transitionSettings.frameCount)
+	for i := range settings.TransitionSettings {
+		settings.TransitionSettings[i].FrameCount = settings.TransitionSettings[i].frameCount()
+		coordinator.imageCount += settings.TransitionSettings[i].FrameCount
 	}
 
 	// ffmpeg needs the images named in a certain way
@@ -180,23 +165,11 @@ func (c *Coordinator) generateTasks() {
 	var startTime = time.Now()
 
 	for transitionStep := 0; transitionStep < len(c.settings.TransitionSettings); transitionStep++ {
-		// generate each image for this transition while zooming in exponentially
+		// generate each image for this transition while zooming exponentially
 		transition := c.settings.TransitionSettings[transitionStep]
-		magnification := transition.MagnificationStart
-		currentX := transition.StartX
-		currentY := transition.StartY
 
-		var currentFrame uint
-		for currentFrame = 1; currentFrame <= transition.FrameCount; currentFrame++ {
-			// Linear interpolation through the coordinates in the transition
-			t := float64(currentFrame) / float64(transition.FrameCount)
-
-			// zooming out
-			if transition.MagnificationStart > transition.MagnificationEnd {
-				currentX = misc.LerpFloat64(transition.StartX, transition.EndX, misc.EaseInExpo(t))
-				currentY = misc.LerpFloat64(transition.StartY, transition.EndY, misc.EaseInExpo(t))
-				magnification /= transition.MagnificationStep
-			}
+		for currentFrame := range transition.FrameCount {
+			currentX, currentY, magnification := transition.frame(currentFrame)
 
 			switch c.settings.TaskGeneration {
 			case task.Row:
@@ -233,13 +206,6 @@ func (c *Coordinator) generateTasks() {
 			default:
 				c.logger.Fatalf("Unknown generation type: %d", c.settings.TaskGeneration)
 				break
-			}
-
-			// zooming in
-			if transition.MagnificationStart < transition.MagnificationEnd {
-				currentX = misc.LerpFloat64(transition.StartX, transition.EndX, misc.EaseOutExpo(t))
-				currentY = misc.LerpFloat64(transition.StartY, transition.EndY, misc.EaseOutExpo(t))
-				magnification *= transition.MagnificationStep
 			}
 
 			imageNumber++
