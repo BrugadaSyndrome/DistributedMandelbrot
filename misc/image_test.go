@@ -2,6 +2,7 @@ package misc
 
 import (
 	"image/color"
+	"math"
 	"testing"
 )
 
@@ -72,6 +73,22 @@ func TestEaseInExpo(t *testing.T) {
 		t.Errorf("EaseInExpo(1) = %v, want 1", got)
 	}
 	assertMonotonic(t, "EaseInExpo", EaseInExpo)
+}
+
+func TestSmoothStep(t *testing.T) {
+	tests := []struct{ in, want float64 }{
+		{0, 0}, {0.25, 0.15625}, {0.5, 0.5}, {1, 1}, {-1, 0}, {2, 1},
+	}
+	for _, tc := range tests {
+		if got := SmoothStep(tc.in); got != tc.want {
+			t.Errorf("SmoothStep(%v) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+	// Symmetric about the middle, so easing in looks the same as easing out
+	if got := SmoothStep(0.2) + SmoothStep(0.8); math.Abs(got-1) > 1e-12 {
+		t.Errorf("SmoothStep(0.2) + SmoothStep(0.8) = %v, want 1", got)
+	}
+	assertMonotonic(t, "SmoothStep", SmoothStep)
 }
 
 // assertMonotonic checks that an easing function never decreases over [0, 1]

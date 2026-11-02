@@ -56,7 +56,8 @@
             "EndY": 0.131825904205330,
             "MagnificationStart": 0.4,
             "MagnificationEnd": 100000,
-            "MagnificationStep": 1.05
+            "MagnificationStep": 1.05,
+            "Path": "Point"
         }
     ]
 }

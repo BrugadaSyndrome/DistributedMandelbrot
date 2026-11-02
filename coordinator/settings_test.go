@@ -80,14 +80,14 @@ func TestTransitionSettingsVerify(t *testing.T) {
 	t.Run("out of range values are replaced with defaults", func(t *testing.T) {
 		ts := transitionSettings{StartX: 5, StartY: -5, EndX: 4.5, EndY: -10, MagnificationStep: 1}
 		_ = ts.Verify()
-		want := transitionSettings{MagnificationStart: 0.5, MagnificationEnd: 1.5, MagnificationStep: 1.1}
+		want := transitionSettings{MagnificationStart: 0.5, MagnificationEnd: 1.5, MagnificationStep: 1.1, Path: SlidePath}
 		if ts != want {
 			t.Errorf("got %+v, want %+v", ts, want)
 		}
 	})
 
 	t.Run("valid values are kept", func(t *testing.T) {
-		ts := transitionSettings{StartX: -0.5, EndX: -0.76, EndY: -0.08, MagnificationStart: 1, MagnificationEnd: 250, MagnificationStep: 1.25}
+		ts := transitionSettings{StartX: -0.5, EndX: -0.76, EndY: -0.08, MagnificationStart: 1, MagnificationEnd: 250, MagnificationStep: 1.25, Path: PointPath}
 		want := ts
 		_ = ts.Verify()
 		if ts != want {
@@ -170,5 +170,26 @@ func TestLoadRunSettings(t *testing.T) {
 				t.Errorf("SavePath/RunName = %q/%q, want %q/%q", s.SavePath, s.RunName, filepath.Dir(folder), "my_run")
 			}
 		})
+	}
+}
+
+func TestTransitionSettingsVerifyPath(t *testing.T) {
+	tests := []struct {
+		in, want  string
+		wantError bool
+	}{
+		{"", SlidePath, false}, // settings and saved runs from before Path existed keep sliding
+		{"Slide", SlidePath, false},
+		{"Point", PointPath, false},
+		{"point", PointPath, false},
+		{"SLIDE", SlidePath, false},
+		{"spiral", SlidePath, true},
+	}
+	for _, tc := range tests {
+		ts := transitionSettings{MagnificationStart: 1, MagnificationEnd: 2, MagnificationStep: 1.1, Path: tc.in}
+		err := ts.Verify()
+		if ts.Path != tc.want || (err != nil) != tc.wantError {
+			t.Errorf("Path %q verified to %q with error %v, want %q (error expected: %v)", tc.in, ts.Path, err, tc.want, tc.wantError)
+		}
 	}
 }

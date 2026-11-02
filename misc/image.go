@@ -31,6 +31,12 @@ func EaseOutExpo(t float64) float64 {
 	return 1 - math.Pow(2, -10*t)
 }
 
+// SmoothStep eases in and out: it starts and ends with zero slope, so motion driven by it has no jolt at either end
+func SmoothStep(t float64) float64 {
+	t = min(max(t, 0), 1)
+	return t * t * (3 - 2*t)
+}
+
 func EaseInExpo(t float64) float64 {
 	if t <= 0 {
 		return 0
