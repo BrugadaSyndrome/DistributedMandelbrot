@@ -26,13 +26,16 @@ import (
 //
 // Concurrency: clients and tasksHandedOut are guarded by mutex. images is only touched by the ingestTasks goroutine.
 // The counters below are atomic because each has a single writer goroutine but is also read by the heartbeat ticker.
+// Everything else, including completed and makeMovie, is set before start and only read afterwards.
 type Coordinator struct {
 	allTasksDone   chan struct{} // closed once every task has been ingested; tells waiting workers to stop
 	clients        map[string]*multirpc.TcpClient
-	digitCount     uint // Used to format name of images for ffmpeg
+	completed      map[uint]bool // frames saved before this run was resumed
+	digitCount     uint          // Used to format name of images for ffmpeg
 	images         map[int]imageTask
 	imageCount     uint
 	logger         bslogger.Logger
+	makeMovie      bool // GenerateMovie is set and ffmpeg was found at startup
 	mutex          sync.Mutex
 	name           string
 	pixelCount     uint
@@ -53,15 +56,53 @@ type Coordinator struct {
 	Server multirpc.TcpServer
 }
 
+// NewCoordinator starts a new run with the settings in settingsFile
 func NewCoordinator(settingsFile string) *Coordinator {
-	settings := NewSettings(settingsFile)
+	coordinator := newCoordinator(NewSettings(settingsFile))
+	misc.CheckError(coordinator.planTasks(), coordinator.logger, misc.Fatal)
 
-	coordinator := &Coordinator{
+	// Create directory to store files for this run
+	misc.CheckError(os.MkdirAll(coordinator.runFolder(), os.ModePerm), coordinator.logger, misc.Fatal)
+
+	// Copy the settings to the directory so the run can be duplicated or resumed in the future
+	marshaledSettings, err := json.MarshalIndent(coordinator.settings, "", "    ")
+	misc.CheckError(err, coordinator.logger, misc.Fatal)
+	bytesWritten, err := misc.WriteFile(filepath.Join(coordinator.runFolder(), settingsBackupName), marshaledSettings)
+	if err != nil || bytesWritten == 0 {
+		coordinator.logger.Fatalf("Unable to make a backup copy of settingsFile %s: %s", settingsFile, err)
+	}
+
+	coordinator.useLogFile(os.O_TRUNC)
+	coordinator.start()
+	return coordinator
+}
+
+// ResumeCoordinator continues a run that stopped before all of its frames were saved. It uses the settings saved in
+// runFolder and only renders the frames that are missing. If none are missing it goes straight to making the movie.
+func ResumeCoordinator(runFolder string) *Coordinator {
+	settings, err := loadRunSettings(runFolder)
+	misc.CheckError(err, bslogger.NewLogger("Coordinator", bslogger.Normal, nil), misc.Fatal)
+	coordinator := newCoordinator(settings)
+	misc.CheckError(coordinator.planTasks(), coordinator.logger, misc.Fatal)
+
+	coordinator.useLogFile(os.O_APPEND)
+	coordinator.logger.Infof("Resuming run %s", coordinator.runFolder())
+	coordinator.resumeFrom(coordinator.completedFrames())
+	coordinator.logger.Infof("%d of %d frames were already saved, %d left to render",
+		len(coordinator.completed), coordinator.imageCount, coordinator.imageCount-uint(len(coordinator.completed)))
+
+	coordinator.start()
+	return coordinator
+}
+
+// newCoordinator builds a Coordinator for verified settings without starting anything
+func newCoordinator(settings settings) *Coordinator {
+	return &Coordinator{
 		allTasksDone: make(chan struct{}),
 		clients:      make(map[string]*multirpc.TcpClient),
-		images:     make(map[int]imageTask),
-		logger:     bslogger.NewLogger("Coordinator", bslogger.Normal, nil),
-		pixelCount: settings.MandelbrotSettings.Height * settings.MandelbrotSettings.Width,
+		images:       make(map[int]imageTask),
+		logger:       bslogger.NewLogger("Coordinator", bslogger.Normal, nil),
+		pixelCount:   settings.MandelbrotSettings.Height * settings.MandelbrotSettings.Width,
 		rectangle: gimage.Rectangle{
 			Min: gimage.Point{
 				X: 0,
@@ -78,41 +119,33 @@ func NewCoordinator(settingsFile string) *Coordinator {
 		tasksTodo:      make(chan task.Task, 1000),
 		workerWait:     &sync.WaitGroup{},
 	}
-	misc.CheckError(settings.Verify(), coordinator.logger, misc.Fatal)
+}
 
-	misc.CheckError(coordinator.planTasks(), coordinator.logger, misc.Fatal)
+// useLogFile records the log in the run folder as well as on the console. flag is os.O_TRUNC to start a new log or
+// os.O_APPEND to add to the log of a resumed run.
+func (c *Coordinator) useLogFile(flag int) {
+	logFile, err := os.OpenFile(filepath.Join(c.runFolder(), "coordinator.log"), os.O_CREATE|os.O_WRONLY|flag, 0644)
+	misc.CheckError(err, c.logger, misc.Warning)
+	c.logger = bslogger.NewLogger("Coordinator", bslogger.Normal, logFile)
+}
 
-	// Create directory to store files for this run
-	if _, err := os.Stat(filepath.Join(settings.SavePath, settings.RunName)); os.IsNotExist(err) {
-		err = os.Mkdir(filepath.Join(settings.SavePath, settings.RunName), os.ModePerm)
-		if err != nil {
-			coordinator.logger.Fatalf("Unable to create folder: %s", err)
+// start begins serving workers and generating and ingesting tasks
+func (c *Coordinator) start() {
+	if c.settings.GenerateMovie {
+		c.makeMovie = ffmpegAvailable()
+		if !c.makeMovie {
+			c.logger.Warning("ffmpeg was not found, so no movie will be made. Install it and resume this run to make the movie.")
 		}
-
 	}
-
-	// Copy the settings to the directory so the run can be duplicated in the future
-	marshaledSettings, err := json.Marshal(settings)
-	bytesWritten, err := misc.WriteFile(filepath.Join(settings.SavePath, settings.RunName, settingsFile), marshaledSettings)
-	if err != nil || bytesWritten == 0 {
-		coordinator.logger.Fatalf("Unable to make a backup copy of settingsFile: %s", settingsFile)
-	}
-
-	// Create a log file to record the run
-	logFile, err := os.Create(filepath.Join(settings.SavePath, settings.RunName, "coordinator.log"))
-	misc.CheckError(err, coordinator.logger, misc.Warning)
-	coordinator.logger = bslogger.NewLogger("Coordinator", bslogger.Normal, logFile)
 
 	// Start up the rpc tcp server to allow workers to communicate with the coordinator. This must come after all other
 	// setup: once Run returns, worker calls are handled on their own goroutines and may read any coordinator field.
-	coordinator.Server = multirpc.NewTcpServer(coordinator, settings.ServerAddress, "CoordinatorServer")
-	misc.CheckError(coordinator.Server.Run(), coordinator.logger, misc.Fatal)
+	c.Server = multirpc.NewTcpServer(c, c.settings.ServerAddress, "CoordinatorServer")
+	misc.CheckError(c.Server.Run(), c.logger, misc.Fatal)
 
-	go coordinator.tickers()
-	go coordinator.generateTasks()
-	go coordinator.ingestTasks()
-
-	return coordinator
+	go c.tickers()
+	go c.generateTasks()
+	go c.ingestTasks()
 }
 
 func (c *Coordinator) tickers() {
@@ -164,11 +197,14 @@ func (c *Coordinator) generateTasks() {
 		transition := c.settings.TransitionSettings[transitionStep]
 
 		for currentFrame := range transition.FrameCount {
-			currentX, currentY, magnification := transition.frame(currentFrame)
-			frame := task.Frame{CenterX: currentX, CenterY: currentY, Magnification: magnification}
+			// Frames saved before a resume are skipped but still numbered, so later frames keep their file names
+			if !c.completed[imageNumber] {
+				currentX, currentY, magnification := transition.frame(currentFrame)
+				frame := task.Frame{CenterX: currentX, CenterY: currentY, Magnification: magnification}
 
-			for _, region := range c.regions {
-				c.tasksTodo <- c.newTask(imageNumber, frame, region)
+				for _, region := range c.regions {
+					c.tasksTodo <- c.newTask(imageNumber, frame, region)
+				}
 			}
 
 			imageNumber++
@@ -203,7 +239,7 @@ func (c *Coordinator) ingestTasks() {
 	c.logger.Infof("Waiting for %d workers to disconnect", workersLeft)
 	c.workerWait.Wait()
 
-	if c.settings.GenerateMovie {
+	if c.makeMovie {
 		c.generateMovie()
 	}
 
@@ -245,16 +281,10 @@ func (c *Coordinator) ingestTask(taskReceived task.Task) {
 	}
 
 	// All pixels have been recorded so save the image
-	path := filepath.Join(c.settings.SavePath, c.settings.RunName, fmt.Sprintf("%0[1]*[2]d.jpg", c.digitCount, taskReceived.ImageNumber))
-	f, err := os.Create(path)
-	if err != nil {
-		c.logger.Fatalf("ERROR - Unable to create image: %s", err)
-	}
-	err = jpeg.Encode(f, image.Image, nil)
-	if err != nil {
+	path := c.framePath(taskReceived.ImageNumber)
+	if err := saveFrame(path, image.Image); err != nil {
 		c.logger.Fatalf("ERROR - Unable to save image: %s", err)
 	}
-	misc.CheckError(f.Close(), c.logger, misc.Warning)
 	c.logger.Infof("Saved image to %s", path)
 
 	// Remove the image to conserve memory
@@ -298,9 +328,69 @@ func (c *Coordinator) planTasks() error {
 	return nil
 }
 
+// resumeFrom leaves out the frames an earlier attempt at this run already saved. It must be called after planTasks.
+// Frame numbers stay the same as in the full run, so the saved and new frames form one sequence for ffmpeg.
+func (c *Coordinator) resumeFrom(completed map[uint]bool) {
+	c.completed = completed
+	c.taskCount = uint(len(c.regions)) * (c.imageCount - uint(len(completed)))
+	c.imageCompletedCount.Store(uint64(len(completed)))
+}
+
+// completedFrames finds the frames an earlier attempt at this run already saved. A frame only counts if it decodes
+// completely at this run's size, since runs from before frames were saved atomically can leave a truncated file.
+func (c *Coordinator) completedFrames() map[uint]bool {
+	completed := make(map[uint]bool)
+	for imageNumber := uint(1); imageNumber <= c.imageCount; imageNumber++ {
+		path := c.framePath(imageNumber)
+		f, err := os.Open(path)
+		if err != nil {
+			continue // not saved yet
+		}
+		frame, err := jpeg.Decode(f)
+		misc.CheckError(f.Close(), c.logger, misc.Warning)
+		switch {
+		case err != nil:
+			c.logger.Warningf("%s is incomplete and will be rendered again: %s", path, err)
+		case frame.Bounds() != c.rectangle:
+			c.logger.Warningf("%s is %v instead of %v and will be rendered again", path, frame.Bounds().Size(), c.rectangle.Size())
+		default:
+			completed[imageNumber] = true
+		}
+	}
+	return completed
+}
+
+// saveFrame writes the frame under a temporary name and then renames it, so a frame file that exists is always
+// complete even if the coordinator is stopped while saving it
+func saveFrame(path string, frame gimage.Image) error {
+	temporary := path + ".tmp"
+	f, err := os.Create(temporary)
+	if err != nil {
+		return err
+	}
+	err = jpeg.Encode(f, frame, nil)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(temporary)
+		return err
+	}
+	return os.Rename(temporary, path)
+}
+
+func (c *Coordinator) runFolder() string {
+	return filepath.Join(c.settings.SavePath, c.settings.RunName)
+}
+
+// framePath is where a frame is saved. ffmpeg needs the frame numbers zero padded to the same width.
+func (c *Coordinator) framePath(imageNumber uint) string {
+	return filepath.Join(c.runFolder(), fmt.Sprintf("%0[1]*[2]d.jpg", c.digitCount, imageNumber))
+}
+
 func (c *Coordinator) generateMovie() {
 	c.logger.Info("Making movie")
-	args := []string{"-r", "60", "-i", filepath.Join(c.settings.SavePath, c.settings.RunName, fmt.Sprintf("%%%dd.jpg", c.digitCount)), "-c:v", "libx264", "-pix_fmt", "yuvj420p", filepath.Join(c.settings.SavePath, c.settings.RunName, "movie.mp4")}
+	args := []string{"-r", "60", "-i", filepath.Join(c.runFolder(), fmt.Sprintf("%%0%dd.jpg", c.digitCount)), "-c:v", "libx264", "-pix_fmt", "yuvj420p", filepath.Join(c.runFolder(), "movie.mp4")}
 	cmd := exec.Command("ffmpeg", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

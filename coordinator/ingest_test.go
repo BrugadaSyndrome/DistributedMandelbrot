@@ -2,7 +2,6 @@ package coordinator
 
 import (
 	"DistributedMandelbrot/task"
-	"fmt"
 	gimage "image"
 	"image/color"
 	"image/jpeg"
@@ -63,16 +62,12 @@ func TestIngestTaskPlacesPixelsWithinBounds(t *testing.T) {
 	}
 }
 
-func framePath(c *Coordinator, imageNumber uint) string {
-	return filepath.Join(c.settings.SavePath, c.settings.RunName, fmt.Sprintf("%d.jpg", imageNumber))
-}
-
 func TestIngestTaskSavesFrameOnceComplete(t *testing.T) {
 	c := newIngestTestCoordinator(t, 8, 2, 1)
 	red := color.RGBA{R: 255, A: 255}
 
 	c.ingestTask(rowTask(0, 1, 0, 8, red))
-	if _, err := os.Stat(framePath(c, 1)); err == nil {
+	if _, err := os.Stat(c.framePath(1)); err == nil {
 		t.Fatal("frame was saved before all of its pixels arrived")
 	}
 	if got := c.imagesInProgress.Load(); got != 1 {
@@ -80,7 +75,7 @@ func TestIngestTaskSavesFrameOnceComplete(t *testing.T) {
 	}
 
 	c.ingestTask(rowTask(1, 1, 1, 8, red))
-	f, err := os.Open(framePath(c, 1))
+	f, err := os.Open(c.framePath(1))
 	if err != nil {
 		t.Fatalf("frame was not saved once complete: %s", err)
 	}
@@ -98,6 +93,9 @@ func TestIngestTaskSavesFrameOnceComplete(t *testing.T) {
 		t.Errorf("saved pixel = (%d, %d, %d), want approximately red", r>>8, g>>8, b>>8)
 	}
 
+	if entries, _ := os.ReadDir(c.runFolder()); len(entries) != 1 {
+		t.Errorf("run folder holds %v, want only the saved frame", entries)
+	}
 	if len(c.images) != 0 || c.imagesInProgress.Load() != 0 {
 		t.Errorf("completed frame should be released, got %d images (%d in progress)", len(c.images), c.imagesInProgress.Load())
 	}
@@ -119,7 +117,7 @@ func TestIngestTaskInterleavedFrames(t *testing.T) {
 	}
 
 	for imageNumber := uint(1); imageNumber <= 2; imageNumber++ {
-		if _, err := os.Stat(framePath(c, imageNumber)); err != nil {
+		if _, err := os.Stat(c.framePath(imageNumber)); err != nil {
 			t.Errorf("frame %d was not saved: %s", imageNumber, err)
 		}
 	}

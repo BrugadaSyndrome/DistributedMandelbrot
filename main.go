@@ -10,12 +10,14 @@ import (
 var (
 	logger       bslogger.Logger
 	mode         string
+	resumeFolder string
 	settingsFile string
 	workerCount  uint
 )
 
 func main() {
 	flag.StringVar(&mode, "mode", "", "Specify if this instance is a 'coordinator' or 'worker'")
+	flag.StringVar(&resumeFolder, "resume", "", "Coordinator only: the folder of an unfinished run to continue with the settings saved in it")
 	flag.StringVar(&settingsFile, "settings", "", "Specify the file with the settings for this run")
 	flag.UintVar(&workerCount, "workers", 2, "Specify the number of workers to create to process coordinator tasks")
 	flag.Parse()
@@ -24,7 +26,7 @@ func main() {
 
 	switch mode {
 	case "coordinator":
-		startCoordinatorMode(settingsFile)
+		startCoordinatorMode(settingsFile, resumeFolder)
 		break
 	case "worker":
 		startWorkerMode(settingsFile)
@@ -34,10 +36,18 @@ func main() {
 	}
 }
 
-func startCoordinatorMode(settingsFile string) {
+func startCoordinatorMode(settingsFile string, resumeFolder string) {
 	logger.Info("Started Coordinator Mode")
 
-	c := coordinator.NewCoordinator(settingsFile)
+	var c *coordinator.Coordinator
+	if resumeFolder != "" {
+		if settingsFile != "" {
+			logger.Warningf("Ignoring -settings=%s since a resumed run uses the settings saved in %s", settingsFile, resumeFolder)
+		}
+		c = coordinator.ResumeCoordinator(resumeFolder)
+	} else {
+		c = coordinator.NewCoordinator(settingsFile)
+	}
 
 	c.Server.Wait()
 }

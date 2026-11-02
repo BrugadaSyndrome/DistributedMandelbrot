@@ -2,9 +2,12 @@ package coordinator
 
 import (
 	"DistributedMandelbrot/task"
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BrugadaSyndrome/bslogger"
 )
@@ -91,4 +94,81 @@ func TestTransitionSettingsVerify(t *testing.T) {
 			t.Errorf("got %+v, want %+v", ts, want)
 		}
 	})
+}
+
+// A machine without ffmpeg must not overwrite the choice in the settings, since that choice is saved with the run and
+// a resumed run on another machine should still make the movie
+func TestSettingsVerifyKeepsGenerateMovie(t *testing.T) {
+	s := newTestSettings()
+	s.GenerateMovie = true
+	_ = s.Verify()
+	if !s.GenerateMovie {
+		t.Error("Verify() turned GenerateMovie off")
+	}
+}
+
+func TestDefaultRunNameUses24HourClock(t *testing.T) {
+	afternoon := time.Date(2026, 11, 1, 15, 21, 13, 0, time.Local)
+	if got, want := defaultRunName(afternoon), "run_2026_11_01-15_21_13"; got != want {
+		t.Errorf("defaultRunName = %q, want %q", got, want)
+	}
+}
+
+// writeRunSettings saves settings JSON with a recognizable MaxIterations into a run folder under the given name
+func writeRunSettings(t *testing.T, folder string, name string, maxIterations uint) {
+	t.Helper()
+	s := newTestSettings()
+	s.MandelbrotSettings.MaxIterations = maxIterations
+	s.RunName = "name_from_the_original_run"
+	s.SavePath = "path/from/the/original/run"
+	contents, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folder, name), contents, 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadRunSettings(t *testing.T) {
+	tests := []struct {
+		name              string
+		files             map[string]uint // file name to the MaxIterations saved in it
+		wantMaxIterations uint            // 0 means loading should fail
+	}{
+		{"settings.json", map[string]uint{settingsBackupName: 123}, 123},
+		{"older runs saved the settings under their original name", map[string]uint{"settings_coordinator.json": 456}, 456},
+		{"settings.json wins over other json files", map[string]uint{settingsBackupName: 123, "notes.json": 789}, 123},
+		{"no settings", map[string]uint{}, 0},
+		{"ambiguous older run", map[string]uint{"a.json": 1, "b.json": 2}, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			folder := filepath.Join(t.TempDir(), "my_run")
+			if err := os.Mkdir(folder, os.ModePerm); err != nil {
+				t.Fatal(err)
+			}
+			for name, maxIterations := range tc.files {
+				writeRunSettings(t, folder, name, maxIterations)
+			}
+
+			s, err := loadRunSettings(folder)
+			if tc.wantMaxIterations == 0 {
+				if err == nil {
+					t.Fatal("loadRunSettings should fail")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadRunSettings returned error: %s", err)
+			}
+			if s.MandelbrotSettings.MaxIterations != tc.wantMaxIterations {
+				t.Errorf("MaxIterations = %d, want %d", s.MandelbrotSettings.MaxIterations, tc.wantMaxIterations)
+			}
+			// The folder may have been moved since the run started, so its location comes from the path given
+			if s.RunName != "my_run" || s.SavePath != filepath.Dir(folder) {
+				t.Errorf("SavePath/RunName = %q/%q, want %q/%q", s.SavePath, s.RunName, filepath.Dir(folder), "my_run")
+			}
+		})
+	}
 }
