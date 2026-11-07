@@ -1,0 +1,1 @@
+DistributedMandelbrot.exe -mode=explorer -settings=settings_explorer.json -workers=4

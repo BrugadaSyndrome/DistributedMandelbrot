@@ -31,12 +31,16 @@ func newWorker(logger bslogger.Logger) *Worker {
 	}
 }
 
-// NewWorker returns a pointer since the RPC server and background goroutines must share one Worker
+// NewWorker starts a worker for the coordinator named in settingsFile
 func NewWorker(settingsFile string) *Worker {
-	settings := NewSettings(settingsFile)
+	return NewWorkerFor(NewSettings(settingsFile).CoordinatorAddress)
+}
+
+// NewWorkerFor starts a worker for the coordinator (or explorer) at coordinatorAddress. It returns a pointer since the
+// RPC server and background goroutines must share one Worker.
+func NewWorkerFor(coordinatorAddress string) *Worker {
 	worker := newWorker(bslogger.NewLogger("Worker", bslogger.Normal, nil))
-	worker.coordinatorAddress = settings.CoordinatorAddress
-	misc.CheckError(settings.Verify(), worker.logger, misc.Fatal)
+	worker.coordinatorAddress = coordinatorAddress
 
 	// Find a free port to use for this worker
 	port, err := misc.GetFreePort()
@@ -44,7 +48,7 @@ func NewWorker(settingsFile string) *Worker {
 	worker.logger.Debugf("Found free port: %d", port)
 	worker.myAddress = fmt.Sprintf("%s:%d", misc.GetLocalAddress(), port)
 	worker.logger = bslogger.NewLogger(fmt.Sprintf("Worker %s", worker.myAddress), bslogger.Normal, nil)
-	worker.ServerClient = multirpc.NewTcpServerClient(worker, worker.myAddress, worker.myAddress, settings.CoordinatorAddress, settings.CoordinatorAddress)
+	worker.ServerClient = multirpc.NewTcpServerClient(worker, worker.myAddress, worker.myAddress, coordinatorAddress, coordinatorAddress)
 	misc.CheckError(worker.ServerClient.Server.Run(), worker.logger, misc.Fatal)
 
 	// Register with the coordinator
@@ -145,8 +149,14 @@ func (w *Worker) processTasks() {
 	w.shutdown()
 }
 
-// render computes the color of every pixel in the task's bounds and stores them in Pixels as packed RGBA, row by row
+// render computes the color of every pixel in the task's bounds and stores them in Pixels as packed RGBA, row by row.
+// An explorer tile gets its samples' iteration counts instead, since the browser colors those itself.
 func (w *Worker) render(t *task.Task) {
+	if t.Tile != nil {
+		t.Pixels = task.EncodeSamples(mandelbrot.TileSamples(*t.Tile, t.Bounds))
+		return
+	}
+
 	t.Pixels = make([]byte, 0, t.ResultSize())
 	for row := t.Bounds.Min.Y; row < t.Bounds.Max.Y; row++ {
 		for column := t.Bounds.Min.X; column < t.Bounds.Max.X; column++ {

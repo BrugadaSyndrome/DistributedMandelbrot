@@ -143,3 +143,22 @@ func TestRenderEmptyBounds(t *testing.T) {
 		t.Errorf("render of an empty task produced %d bytes", len(todo.Pixels))
 	}
 }
+
+// A tile task gets iteration samples from mandelbrot.TileSamples rather than colors from the worker's movie settings
+func TestRenderTileReturnsSamples(t *testing.T) {
+	w := newWorker(bslogger.NewLogger("WorkerTest", bslogger.Normal, nil))
+	tile := &task.Tile{Boundary: 1000, MaxIterations: 100, OriginX: -2, OriginY: -1.5, PixelSize: 3.0 / task.TileSize, SuperSampling: 2}
+	todo := task.Task{Bounds: image.Rect(0, 0, task.TileSize, task.TileSize), Tile: tile}
+	w.render(&todo)
+
+	if !todo.HasValidResult() {
+		t.Fatalf("render produced %d bytes, want %d", len(todo.Pixels), todo.ResultSize())
+	}
+	want := mandelbrot.TileSamples(*tile, todo.Bounds)
+	got := task.DecodeSamples(todo.Pixels)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("sample %d = %v, want %v", i, got[i], want[i])
+		}
+	}
+}

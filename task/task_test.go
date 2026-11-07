@@ -2,6 +2,7 @@ package task
 
 import (
 	"image"
+	"math"
 	"testing"
 )
 
@@ -161,5 +162,46 @@ func TestGenerationString(t *testing.T) {
 		if got := g.String(); got != want {
 			t.Errorf("Generation(%d).String() = %q, want %q", int(g), got, want)
 		}
+	}
+}
+
+func TestTileResultSize(t *testing.T) {
+	tests := []struct {
+		superSampling int
+		want          int
+	}{
+		{1, 256 * 256 * 4},
+		{2, 256 * 256 * 4 * 4},
+		{4, 256 * 256 * 16 * 4},
+	}
+	for _, tc := range tests {
+		tk := Task{Bounds: image.Rect(0, 0, TileSize, TileSize), Tile: &Tile{SuperSampling: tc.superSampling}}
+		if got := tk.ResultSize(); got != tc.want {
+			t.Errorf("ResultSize() with SuperSampling %d = %d, want %d", tc.superSampling, got, tc.want)
+		}
+	}
+}
+
+func TestEncodeSamplesRoundTrip(t *testing.T) {
+	samples := []float32{0, 1, -1, 3.25, 10000, float32(math.Pi)}
+	encoded := EncodeSamples(samples)
+	if len(encoded) != len(samples)*BytesPerSample {
+		t.Fatalf("encoded %d samples into %d bytes, want %d", len(samples), len(encoded), len(samples)*BytesPerSample)
+	}
+	// Little endian: the low byte of 1.0 (0x3F800000) comes first
+	if encoded[4] != 0x00 || encoded[7] != 0x3F {
+		t.Errorf("1.0 encoded as % x, want 00 00 80 3f", encoded[4:8])
+	}
+	decoded := DecodeSamples(encoded)
+	if len(decoded) != len(samples) {
+		t.Fatalf("decoded %d samples, want %d", len(decoded), len(samples))
+	}
+	for i := range samples {
+		if decoded[i] != samples[i] {
+			t.Errorf("sample %d = %v after a round trip, want %v", i, decoded[i], samples[i])
+		}
+	}
+	if got := DecodeSamples(encoded[:5]); len(got) != 1 {
+		t.Errorf("decoding 5 bytes gave %d samples, want 1", len(got))
 	}
 }

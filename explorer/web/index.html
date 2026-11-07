@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mandelbrot Explorer</title>
+    <link rel="stylesheet" href="explorer.css">
+    <script type="module" src="explorer.js"></script>
+</head>
+<body>
+<canvas id="view" tabindex="0" aria-label="Mandelbrot set. Drag or use WASD or the arrow keys to pan; scroll or use plus and minus to zoom."></canvas>
+
+<button id="toggle-sidebar" class="floating" type="button" aria-expanded="true" aria-controls="sidebar" title="Show or hide settings">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    <span>Settings</span>
+</button>
+
+<aside id="sidebar">
+    <h1>Mandelbrot Explorer</h1>
+
+    <section>
+        <h2>Rendering</h2>
+        <label>Max iterations
+            <input id="max-iterations" type="number" min="1" step="1">
+        </label>
+        <label>Boundary
+            <input id="boundary" type="number" min="0" step="any">
+        </label>
+        <label>Super sampling
+            <select id="super-sampling"></select>
+        </label>
+        <p class="hint">Changing these renders the view again.</p>
+    </section>
+
+    <section>
+        <h2>Colors</h2>
+        <label class="inline"><input id="smooth-coloring" type="checkbox"> Smooth coloring</label>
+        <label class="inline">Escape color <input id="escape-color" type="color"></label>
+        <h3>Palette</h3>
+        <canvas id="palette-preview" width="256" height="1" aria-hidden="true"></canvas>
+        <ol id="gradients"></ol>
+        <button id="add-gradient" type="button">Add gradient</button>
+        <p class="hint">Colors are applied in your browser, so changes show at once.</p>
+    </section>
+
+    <section>
+        <h2>Location</h2>
+        <dl id="location">
+            <dt>Center X</dt><dd id="center-x"></dd>
+            <dt>Center Y</dt><dd id="center-y"></dd>
+            <dt>Magnification</dt><dd id="magnification"></dd>
+            <dt>Zoom level</dt><dd id="zoom-level"></dd>
+        </dl>
+        <div class="buttons">
+            <button id="copy-location" type="button" title="Copy as EndX, EndY and MagnificationEnd for a movie transition">Copy for a movie</button>
+            <button id="reset-view" type="button">Reset view</button>
+        </div>
+    </section>
+
+    <section>
+        <h2>Limits</h2>
+        <dl id="limits"></dl>
+        <p class="hint">Set by the server in settings_explorer.json.</p>
+    </section>
+
+    <button id="reset-settings" type="button">Reset settings</button>
+</aside>
+
+<div id="zoom-controls" class="floating">
+    <button id="zoom-in" type="button" title="Zoom in (+)" aria-label="Zoom in">+</button>
+    <button id="zoom-out" type="button" title="Zoom out (-)" aria-label="Zoom out">&minus;</button>
+</div>
+
+<div id="status" class="floating" role="status" aria-live="polite"></div>
+
+<template id="gradient-row">
+    <li>
+        <input class="start" type="color" aria-label="Start color">
+        <span class="arrow" aria-hidden="true">&rarr;</span>
+        <input class="end" type="color" aria-label="End color">
+        <input class="count" type="number" min="1" max="1000" step="1" aria-label="Number of colors" title="Number of colors">
+        <button class="remove" type="button" aria-label="Remove gradient" title="Remove gradient">&times;</button>
+    </li>
+</template>
+
+<div id="busy-overlay" hidden>
+    <div class="message">
+        <h2>The explorer is already open</h2>
+        <p>Another tab or window is using the explorer. Please switch to that page.</p>
+        <p class="hint">This page will take over automatically if that one is closed.</p>
+    </div>
+</div>
+</body>
+</html>
