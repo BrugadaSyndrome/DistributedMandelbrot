@@ -40,7 +40,7 @@
         <canvas id="palette-preview" width="256" height="1" aria-hidden="true"></canvas>
         <ol id="gradients"></ol>
         <button id="add-gradient" type="button">Add gradient</button>
-        <p class="hint">Colors are applied in your browser, so changes show at once.</p>
+        <p class="hint">Colors are applied in your browser, so changes show as soon as the color picker closes.</p>
     </section>
 
     <section>
@@ -73,8 +73,15 @@
 
 <div id="status" class="floating" role="status" aria-live="polite"></div>
 
+<div id="context-menu" class="floating" role="menu" hidden>
+    <button id="save-image" type="button" role="menuitem">Save image as PNG</button>
+</div>
+
 <template id="gradient-row">
     <li>
+        <button class="handle" type="button" title="Drag to reorder" aria-label="Move gradient: drag, or use the up and down arrow keys">
+            <svg viewBox="0 0 10 16" aria-hidden="true"><circle cx="3" cy="3" r="1.4"/><circle cx="7" cy="3" r="1.4"/><circle cx="3" cy="8" r="1.4"/><circle cx="7" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="7" cy="13" r="1.4"/></svg>
+        </button>
         <input class="start" type="color" aria-label="Start color">
         <span class="arrow" aria-hidden="true">&rarr;</span>
         <input class="end" type="color" aria-label="End color">

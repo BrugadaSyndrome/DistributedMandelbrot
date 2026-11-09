@@ -41,6 +41,7 @@ const state = {
     claimTimer: 0,
     heartbeatTimer: 0,
     error: "",
+    focusGradientHandle: null, // a palette row moved with the keyboard, whose handle keeps focus after the form is rebuilt
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -434,6 +435,28 @@ function setupInput() {
     canvas.addEventListener("pointerup", endDrag);
     canvas.addEventListener("pointercancel", endDrag);
 
+    // The browser's own "Save image as" cannot be given a file name, so right click opens this page's menu instead
+    const menu = $("context-menu");
+    canvas.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        menu.hidden = false;
+        menu.style.left = `${Math.min(event.clientX, window.innerWidth - menu.offsetWidth - 4)}px`;
+        menu.style.top = `${Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 4)}px`;
+        $("save-image").focus();
+    });
+    const closeMenu = () => { menu.hidden = true; };
+    window.addEventListener("pointerdown", (event) => {
+        if (!menu.contains(event.target)) closeMenu();
+    });
+    window.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeMenu();
+    });
+    canvas.addEventListener("wheel", closeMenu);
+    $("save-image").addEventListener("click", () => {
+        closeMenu();
+        saveImage();
+    });
+
     window.addEventListener("keydown", (event) => {
         if (event.target.closest("input, select, textarea") || event.ctrlKey || event.metaKey || event.altKey) return;
         const stepX = canvas.width / 8, stepY = canvas.height / 8;
@@ -496,7 +519,59 @@ function addGradientRow(gradient) {
         row.remove();
         settingsChanged();
     });
+    setupReordering(row);
     $("gradients").append(row);
+}
+
+// setupReordering lets a gradient row be moved by dragging its handle, or with the arrow keys while the handle has
+// focus. The palette is generated from the gradients in order, so a move is sent like any other setting change.
+function setupReordering(row) {
+    const handle = row.querySelector(".handle");
+    const position = () => [...row.parentElement.children].indexOf(row);
+
+    handle.addEventListener("keydown", (event) => {
+        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+        // Keep the arrow keys from also panning the view
+        event.preventDefault();
+        event.stopPropagation();
+        const neighbor = event.key === "ArrowUp" ? row.previousElementSibling : row.nextElementSibling;
+        if (!neighbor) return;
+        if (event.key === "ArrowUp") neighbor.before(row); else neighbor.after(row);
+        handle.focus();
+        // The form is rebuilt from the server's answer, so remember which handle to give focus back to
+        state.focusGradientHandle = position();
+        settingsChanged(0);
+    });
+
+    handle.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        row.classList.add("dragging");
+        const startPosition = position();
+
+        // Follow the pointer on the window rather than capturing it on the handle: moving the row within the page
+        // releases any capture, which would leave the drag stuck
+        const move = (moveEvent) => {
+            if (!row.isConnected) return;
+            // Put the row before or after whichever row the pointer is over, depending on which half it is in
+            for (const other of row.parentElement.children) {
+                const rect = other.getBoundingClientRect();
+                if (other === row || moveEvent.clientY < rect.top || moveEvent.clientY >= rect.bottom) continue;
+                if (moveEvent.clientY < rect.top + rect.height / 2) other.before(row); else other.after(row);
+                break;
+            }
+        };
+        const end = () => {
+            window.removeEventListener("pointermove", move);
+            window.removeEventListener("pointerup", end);
+            window.removeEventListener("pointercancel", end);
+            row.classList.remove("dragging");
+            if (row.isConnected && position() !== startPosition) settingsChanged(0);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", end);
+        window.addEventListener("pointercancel", end);
+    });
 }
 
 function fillForm(s) {
@@ -507,6 +582,10 @@ function fillForm(s) {
     $("escape-color").value = hex(s.EscapeColor);
     $("gradients").replaceChildren();
     for (const gradient of s.GeneratePaletteSettings || []) addGradientRow(gradient);
+    if (state.focusGradientHandle !== null) {
+        $("gradients").children[state.focusGradientHandle]?.querySelector(".handle").focus();
+        state.focusGradientHandle = null;
+    }
     drawPalettePreview(s.Palette);
 }
 
@@ -595,17 +674,12 @@ function setupForm() {
         return [dt, dd];
     }));
 
-    // Numbers apply when committed (Enter or leaving the field); colors apply while the picker moves
-    for (const id of ["max-iterations", "boundary", "super-sampling", "smooth-coloring"]) {
+    // Everything applies when committed: numbers on Enter or leaving the field, colors when the picker closes.
+    // Applying a color while its picker is open would rebuild the form and close the picker after one change.
+    for (const id of ["max-iterations", "boundary", "super-sampling", "smooth-coloring", "escape-color"]) {
         $(id).addEventListener("change", () => settingsChanged(0));
     }
-    $("escape-color").addEventListener("input", () => settingsChanged());
-    $("gradients").addEventListener("input", (event) => {
-        if (event.target.type === "color") settingsChanged();
-    });
-    $("gradients").addEventListener("change", (event) => {
-        if (event.target.type === "number") settingsChanged(0);
-    });
+    $("gradients").addEventListener("change", () => settingsChanged(0));
     $("add-gradient").addEventListener("click", () => {
         const gradients = state.settings.GeneratePaletteSettings || [];
         const last = gradients[gradients.length - 1];
@@ -644,6 +718,28 @@ async function copyLocation() {
         $("copy-location").textContent = "Copy failed";
     }
     setTimeout(() => { $("copy-location").textContent = "Copy for a movie"; }, 1500);
+}
+
+// imageFileName names a saved view after where it is: center x, center y, magnification and zoom level
+function imageFileName() {
+    const {x, y, zoom} = state.view;
+    return `${x.toPrecision(17)}_${y.toPrecision(17)}_${magnification().toPrecision(6)}_${zoom.toFixed(2)}.png`;
+}
+
+// saveImage downloads the view as shown, at full device resolution and without the page's controls
+function saveImage() {
+    const name = imageFileName();
+    canvas.toBlob((blob) => {
+        if (!blob) {
+            showError("Unable to save the image");
+            return;
+        }
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = name;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+    }, "image/png");
 }
 
 function showError(message) {

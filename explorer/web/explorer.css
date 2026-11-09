@@ -191,6 +191,36 @@ input[type="color"] {
     margin-bottom: 6px;
 }
 
+#gradients .handle {
+    padding: 4px 2px;
+    border: none;
+    background: none;
+    color: var(--muted);
+    cursor: grab;
+    touch-action: none;
+}
+
+#gradients .handle:hover {
+    color: var(--text);
+}
+
+#gradients .handle svg {
+    display: block;
+    width: 10px;
+    height: 16px;
+    fill: currentColor;
+}
+
+#gradients li.dragging {
+    background: var(--control);
+    border-radius: 6px;
+    opacity: 0.8;
+}
+
+#gradients li.dragging .handle {
+    cursor: grabbing;
+}
+
 #gradients .arrow {
     color: var(--muted);
 }
@@ -264,6 +294,27 @@ dd {
 
 #status .error {
     color: #ff6b6b;
+}
+
+#context-menu {
+    z-index: 5;
+    padding: 4px;
+}
+
+#context-menu[hidden] {
+    display: none;
+}
+
+#context-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: none;
+}
+
+#context-menu button:hover, #context-menu button:focus-visible {
+    background: var(--control-hover);
 }
 
 #busy-overlay {
